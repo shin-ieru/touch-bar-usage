@@ -46,6 +46,67 @@ structurally — no screen scraping, no OCR.
 > `/usage` output at the same moment has **not** been performed. Run `/usage` in
 > Claude Code and compare against the menu-bar figures to close this out.
 
+## v0.1.0 release candidate (macOS 26.6.2)
+
+Run against the **packaged Release artifact**, extracted from
+`Touch-Bar-Usage-v0.1.0-macOS.zip` and launched from outside the build directory
+— not the development build.
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | Release `.app` launches from a fresh extract | **pass** |
+| 2 | Badge appears in the Control Strip | **pass** |
+| 3 | Badge shows the **fallback** Claude mark | **pass** — intended; Clawd is not redistributable |
+| 4 | Codex mark still renders | **pass** — resolved at runtime from the installed OpenAI app, so it survives packaging |
+| 5 | Tap opens the Claude + Codex dashboard | **pass** |
+| 6 | Claude detail opens, Back returns | **pass** |
+| 7 | Codex detail opens, Back returns | **pass** |
+| 8 | Close restores the native Touch Bar | **pass** |
+| 9 | Brightness and volume work after Close | **pass** |
+| 10 | Codex App Server connects, one child process | **pass** |
+| 11 | Artifact contains no third-party artwork | **pass** — asserted by the packaging script and CI |
+| 12 | Checksum verifies | **pass** — `shasum -a 256 -c` |
+
+### Packaging and Gatekeeper
+
+| Check | Result |
+| --- | --- |
+| `codesign --verify --strict` | **valid**, satisfies its designated requirement |
+| Signature type | **ad-hoc** — `TeamIdentifier=not set` |
+| Entitlements | **none** — nothing requested |
+| `spctl -a` (Gatekeeper) | **rejected**, as expected for an unnotarized build |
+
+A downloaded copy will carry the quarantine attribute and be blocked on first
+double-click; right-click → **Open** clears it. This was **not** reproduced
+end-to-end — the artifact was extracted locally, so it never carried quarantine.
+The `spctl` rejection above is the same assessment Gatekeeper applies.
+
+### Clean-clone verification
+
+A fresh `git clone` of the repository was built from scratch:
+
+| Check | Result |
+| --- | --- |
+| No branded assets in the checkout | **pass** |
+| `make test` | **pass** — 171 tests |
+| `make audit` | **pass** |
+| `make package` | **pass** after the fix below |
+| `make assets` then local build includes Clawd | **pass** |
+
+**Defect found by this test:** `make_app.sh` used `swift build --show-bin-path` to
+locate the binary but never built it, so it silently depended on a warm `.build`
+directory. It worked in the development checkout and failed on a fresh clone.
+Fixed by building before bundling.
+
+### Not verified
+
+| Check | Status |
+| --- | --- |
+| Quarantine / download-path Gatekeeper prompt | not reproduced — see above |
+| Notarization | **not performed** — no Developer ID certificate on this machine |
+| Intel Touch Bar Macs | no hardware available |
+| Install into `/Applications` and Launch at Login | not exercised for the release build |
+
 ## Persistent usage mode (macOS 26.6.2)
 
 Auto-dismiss was removed. Usage mode now stays open until the user closes it or
