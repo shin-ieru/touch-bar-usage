@@ -16,7 +16,15 @@ At rest, only the small badge is there — your native controls are untouched:
 
 ![The compact Claude + Codex badge beside the native Control Strip](docs/images/touchbar-resting-badge.png)
 
-*Real Touch Bar screenshots from a MacBook Pro (M2, 13-inch) running macOS 26.6.*
+> **About these screenshots.** Real Touch Bar captures from a MacBook Pro
+> (M2, 13-inch) running macOS 26.6.2 — not mock-ups. They are shown with
+> **optional locally resolved branding assets**: the Clawd mark is fetched onto
+> your own machine by `make assets` when you build from source.
+> **Public release builds ship repository-safe fallback artwork instead**, because
+> Clawd is Anthropic's and this project does not redistribute it. The Codex mark
+> resolves at runtime from an OpenAI app already installed on your machine, so it
+> looks the same either way. Everything else — layout, numbers, behaviour — is
+> identical. See [Mascot](#mascot).
 
 ## What it does
 
@@ -339,16 +347,17 @@ the process, so cleanup runs. If one is stranded, log out and back in.
 
 ## Roadmap
 
-```
-Phase 1  —  Claude Code            ✓ done
-Phase 2  —  OpenAI Codex           ✓ done
-v0.1.0   —  first public release   ← you are here
-Later    —  Developer ID signing + notarization
-            Homebrew Cask
-            additional usage providers if useful
-```
+**v0.1.0** — Claude Code and Codex support, on the Touch Bar. You are here.
 
-Distribution is via GitHub releases and (later) a Homebrew Cask. **Not the Mac App
+Next, roughly in order:
+
+- Developer ID signing and notarization, so the app opens without the Gatekeeper
+  detour
+- a Homebrew Cask, once the release URL is stable
+- verification on Intel Touch Bar Macs
+- additional usage providers, if they turn out to be useful
+
+Distribution is via GitHub Releases and, later, Homebrew. **Not the Mac App
 Store** — the Touch Bar presentation depends on private APIs, which disqualifies
 it.
 
@@ -367,8 +376,13 @@ MIT — see [`LICENSE`](LICENSE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). There are no third-party
 dependencies.
 
----
+## Disclaimer
 
 **Touch Bar Usage is an independent open-source project and is not affiliated
-with, endorsed by, or sponsored by Anthropic.** Claude and Anthropic are
-trademarks of Anthropic PBC; Touch Bar and macOS are trademarks of Apple Inc.
+with, endorsed by, or sponsored by Anthropic or OpenAI.**
+
+Claude and Anthropic are trademarks of Anthropic PBC. ChatGPT, Codex and OpenAI
+are trademarks of OpenAI. Touch Bar, macOS and MacBook Pro are trademarks of
+Apple Inc. These names are used only to describe what this software interoperates
+with, and no ownership or licence of any mark is claimed. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

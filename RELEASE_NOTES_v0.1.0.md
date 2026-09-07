@@ -117,3 +117,7 @@ What was and was not verified on hardware is recorded in
 
 Touch Bar Usage is an independent open-source project and is not affiliated with,
 endorsed by, or sponsored by Anthropic or OpenAI.
+
+Claude and Anthropic are trademarks of Anthropic PBC; ChatGPT, Codex and OpenAI
+are trademarks of OpenAI; Touch Bar and macOS are trademarks of Apple Inc. No
+ownership or licence of any mark is claimed.
