@@ -18,7 +18,6 @@ final class ProviderDetailView: NSView {
 
     var onBack: (() -> Void)?
     var onClose: (() -> Void)?
-    var onInteraction: (() -> Void)?
 
     private let titleLabel = NSTextField(labelWithString: "")
     private let rowsStack = NSStackView()
@@ -117,10 +116,7 @@ final class ProviderDetailView: NSView {
         }
     }
 
-    @objc private func handleBack() {
-        onInteraction?()
-        onBack?()
-    }
+    @objc private func handleBack() { onBack?() }
 
     @objc private func handleClose() { onClose?() }
 

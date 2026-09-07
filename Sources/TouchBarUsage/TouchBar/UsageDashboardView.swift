@@ -19,8 +19,6 @@ final class UsageDashboardView: NSView {
     /// Tapping a provider opens its detail page.
     var onSelectProvider: ((String) -> Void)?
     var onClose: (() -> Void)?
-    /// Any interaction resets the auto-dismiss timer.
-    var onInteraction: (() -> Void)?
 
     private let stack = NSStackView()
 
@@ -104,7 +102,6 @@ final class UsageDashboardView: NSView {
     }
 
     @objc private func handleProvider(_ sender: NSButton) {
-        onInteraction?()
         guard let chip = sender as? ProviderChipButton else { return }
         onSelectProvider?(chip.providerID)
     }

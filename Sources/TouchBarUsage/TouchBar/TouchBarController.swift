@@ -8,9 +8,9 @@ import TouchBarUsageKit
 /// and per-app controls behave exactly as they normally would.
 ///
 /// **Usage mode** is entered by tapping that entry point (or from the menu bar)
-/// and presents the expanded Claude + Codex dashboard. It is intentionally
-/// temporary: closing it, or letting it auto-dismiss, hands the bar straight back
-/// to macOS.
+/// and presents the expanded Claude + Codex dashboard. Once open it **stays
+/// open** — there is no inactivity timeout — until the user closes it or the Mac
+/// sleeps, at which point the bar goes straight back to macOS.
 ///
 /// Phase 1 kept a widget permanently presented over the whole strip. That was
 /// abandoned because a system-modal bar is inherently full-width, so it
@@ -28,14 +28,10 @@ final class TouchBarController: NSObject {
     private var model = DashboardViewModel(entries: [])
     private(set) var presentation: TouchBarPresentation = .normal
 
-    /// Auto-dismiss: usage mode should not sit open indefinitely.
-    private var dismissTimer: Timer?
-    /// Refreshes the countdown text while a detail page is visible.
+    /// Refreshes the countdown text while a detail page is visible. This is the
+    /// **only** timer in the presentation layer — there is deliberately no
+    /// inactivity timer, so nothing can close usage mode behind the user's back.
     private var tickTimer: Timer?
-
-    /// Chosen after physical testing: long enough to read both providers and tap
-    /// into a detail page, short enough that a stray tap does not strand the bar.
-    static let autoDismissInterval: TimeInterval = 12
 
     /// Called when usage mode opens, so the app can refresh opportunistically.
     var onUsageModeOpened: (() -> Void)?
@@ -104,9 +100,10 @@ final class TouchBarController: NSObject {
         let view = UsageDashboardView(model: model)
         view.onSelectProvider = { [weak self] id in self?.showDetail(providerID: id) }
         view.onClose = { [weak self] in self?.closeUsageMode() }
-        view.onInteraction = { [weak self] in self?.restartDismissTimer() }
         dashboardView = view
         detailView = nil
+        // Coming back from a detail page: nothing left to tick.
+        stopTickTimer()
 
         if bridge.isPresentingUsageBar {
             bridge.updateUsageBar(view: view)
@@ -114,7 +111,6 @@ final class TouchBarController: NSObject {
             bridge.presentUsageBar(view: view)
         }
         presentation = .dashboard
-        restartDismissTimer()
         onUsageModeOpened?()
     }
 
@@ -126,19 +122,17 @@ final class TouchBarController: NSObject {
                                           severity: entry.severity ?? .normal))
         view.onBack = { [weak self] in self?.openUsageMode() }
         view.onClose = { [weak self] in self?.closeUsageMode() }
-        view.onInteraction = { [weak self] in self?.restartDismissTimer() }
         detailView = view
         dashboardView = nil
 
         bridge.updateUsageBar(view: view)
         presentation = .detail(providerID: providerID)
-        restartDismissTimer()
         startTickTimer()
     }
 
-    /// Leaves usage mode and returns the Touch Bar to macOS. The tray item stays.
+    /// Leaves usage mode and returns the Touch Bar to macOS immediately. The tray
+    /// item stays, so the user can reopen with one tap.
     func closeUsageMode() {
-        stopDismissTimer()
         stopTickTimer()
         bridge.dismissUsageBar()
         dashboardView = nil
@@ -147,29 +141,35 @@ final class TouchBarController: NSObject {
         log.info("usage mode closed; native touch bar restored")
     }
 
-    // MARK: - Auto-dismiss
+    // MARK: - System sleep
 
-    /// Restarted by every interaction, so the bar never closes under the user's
-    /// finger. Only usage mode is timed; normal mode has nothing to dismiss.
-    private func restartDismissTimer() {
-        stopDismissTimer()
-        let timer = Timer(timeInterval: Self.autoDismissInterval, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.autoDismiss() }
-        }
-        timer.tolerance = 1
-        RunLoop.main.add(timer, forMode: .common)
-        dismissTimer = timer
-    }
-
-    private func autoDismiss() {
+    /// Sleep is the only non-user event that closes usage mode.
+    ///
+    /// A system-modal Touch Bar left presented across a sleep/wake cycle risks
+    /// coming back as a stale bar the user cannot dismiss, so it is torn down
+    /// while the machine is still awake enough for the private API call to land.
+    /// The tray item is deliberately left installed — it is the entry point, and
+    /// removing it would leave nothing to tap on wake.
+    func handleSystemWillSleep() {
         guard presentation.isUsageModeOpen else { return }
-        log.info("usage mode auto-dismissed")
+        log.info("usage mode dismissed for system sleep")
         closeUsageMode()
     }
 
-    private func stopDismissTimer() {
-        dismissTimer?.invalidate()
-        dismissTimer = nil
+    /// Wake restores the resting state and nothing more.
+    ///
+    /// Usage mode is **never** reopened automatically: the user asked for it once,
+    /// before a sleep, and silently restoring it would put a modal bar on screen
+    /// they did not ask for now. They tap the badge again if they want it.
+    func handleSystemDidWake() {
+        // Re-assert the tray item: the Touch Bar agent can drop registrations
+        // across a sleep cycle, and installing is idempotent.
+        if TouchBarLifecycle.shouldReinstallTrayItemOnWake(
+            isSupported: bridge.isTrayItemSupported,
+            isInstalled: bridge.isTrayItemInstalled) {
+            log.info("reinstalling tray item after wake")
+            installTrayItem()
+        }
     }
 
     /// Countdown text ticks locally from the cached `resetAt`; it never triggers
@@ -196,7 +196,6 @@ final class TouchBarController: NSObject {
     // MARK: - Teardown
 
     func teardown() {
-        stopDismissTimer()
         stopTickTimer()
         bridge.teardown()
         trayView = nil
