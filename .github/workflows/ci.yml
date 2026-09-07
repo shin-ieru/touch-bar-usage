@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+
+      # The whole suite runs headless: no credential, no network, no Touch Bar,
+      # no Claude Code install. If a test ever needs one of those, it belongs in
+      # docs/manual-test-results.md instead.
+      - name: Test
+        run: swift test
+
+      - name: Build release
+        run: swift build -c release
+
+      # Compile-time validation of the private-API bridge. GitHub runners have no
+      # physical Touch Bar, so this proves the bridge *compiles and links*; it
+      # deliberately does not assert that presentation works. Physical runtime
+      # verification remains a manual, documented requirement.
+      - name: Assemble app bundle
+        run: make app
+
+      - name: Verify bundle layout
+        run: |
+          APP="dist/Touch Bar Usage.app"
+          test -x "$APP/Contents/MacOS/TouchBarUsage"
+          test -f "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist"
+
+      # A clean checkout must never contain a local mascot asset.
+      - name: Assert no local assets in checkout
+        run: |
+          if [ -e LocalAssets/claude-mascot.png ]; then
+            echo "LocalAssets must not be committed"; exit 1
+          fi
+
+  audit:
+    name: Secret and hygiene audit
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit tracked files
+        run: make audit

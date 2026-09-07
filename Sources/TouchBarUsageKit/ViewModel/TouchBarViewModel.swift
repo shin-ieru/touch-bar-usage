@@ -176,9 +176,14 @@ public struct DetailViewModel: Equatable, Sendable {
         }
 
         // Headline windows first, then any model-specific caps, then anything new.
+        //
+        // Unrecognised buckets are kept in the snapshot for forward compatibility
+        // (Anthropic's live response already carries at least one), but an empty
+        // one would just be noise on a narrow bar — so `.other` is shown only
+        // once it is actually being consumed.
         let ordered = [snapshot.shortWindow, snapshot.weeklyWindow].compactMap { $0 }
             + snapshot.modelSpecificWindows
-            + snapshot.windows.filter { $0.category == .other }
+            + snapshot.windows.filter { $0.category == .other && $0.usedPercent > 0 }
 
         let rows = ordered.map { window -> Row in
             var reset = "reset time unknown"

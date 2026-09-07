@@ -176,3 +176,35 @@ final class TouchBarViewModelTests: XCTestCase {
         XCTAssertEqual(ResetFormatter.age(since: .testNow, now: Date.testNow.addingTimeInterval(7_200)), "2h ago")
     }
 }
+
+/// Anthropic's live response carries buckets we do not recognise (an empty one
+/// was observed in testing). They must survive parsing but not clutter the bar.
+extension TouchBarViewModelTests {
+
+    private func snapshotWithUnknownBucket(unknownPercent: Double) -> UsageSnapshot {
+        UsageSnapshot(
+            providerID: "claude",
+            windows: [
+                UsageWindow(id: "five_hour", label: "5h", usedPercent: 26, category: .short),
+                UsageWindow(id: "seven_day", label: "W", longLabel: "Week", usedPercent: 15, category: .weekly),
+                UsageWindow(id: "unknown_bucket", label: "Unknown Bucket",
+                            usedPercent: unknownPercent, category: .other),
+            ],
+            fetchedAt: .testNow)
+    }
+
+    func testUnknownBucketNeverReachesTheCompactBar() {
+        let vm = TouchBarViewModel.make(state: .ready(snapshotWithUnknownBucket(unknownPercent: 40)))
+        XCTAssertEqual(vm.segments.map(\.label), ["5h", "W"])
+    }
+
+    func testEmptyUnknownBucketIsHiddenInDetail() {
+        let detail = DetailViewModel.make(state: .ready(snapshotWithUnknownBucket(unknownPercent: 0)), now: .testNow)
+        XCTAssertEqual(detail.rows.map(\.label), ["5h", "Week"])
+    }
+
+    func testConsumedUnknownBucketIsShownInDetail() {
+        let detail = DetailViewModel.make(state: .ready(snapshotWithUnknownBucket(unknownPercent: 12)), now: .testNow)
+        XCTAssertEqual(detail.rows.map(\.label), ["5h", "Week", "Unknown Bucket"])
+    }
+}
