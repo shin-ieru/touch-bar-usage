@@ -46,7 +46,7 @@ structurally — no screen scraping, no OCR.
 > `/usage` output at the same moment has **not** been performed. Run `/usage` in
 > Claude Code and compare against the menu-bar figures to close this out.
 
-## v0.1.0 release candidate (macOS 26.6.2)
+## v0.1.0 release (macOS 26.6.2)
 
 Run against the **packaged Release artifact**, extracted from
 `Touch-Bar-Usage-v0.1.0-macOS.zip` and launched from outside the build directory
@@ -76,10 +76,27 @@ Run against the **packaged Release artifact**, extracted from
 | Entitlements | **none** — nothing requested |
 | `spctl -a` (Gatekeeper) | **rejected**, as expected for an unnotarized build |
 
-A downloaded copy will carry the quarantine attribute and be blocked on first
-double-click; right-click → **Open** clears it. This was **not** reproduced
-end-to-end — the artifact was extracted locally, so it never carried quarantine.
-The `spctl` rejection above is the same assessment Gatekeeper applies.
+### Verified from the published GitHub Release
+
+Repeated after publication against the artifact **downloaded from the Release
+page**, not the local `dist/` copy:
+
+| Check | Result |
+| --- | --- |
+| Download from the Release page | **pass** |
+| SHA-256 matches the published checksum | **pass** — `1063eb6f…5902e8d2` |
+| Bundle contains only Info.plist, CodeResources and the binary | **pass** |
+| No third-party artwork | **pass** |
+| `CFBundleVersion` matches the release commit | **pass** — `5f45f84` |
+| Launches from the downloaded copy | **pass** — tray item installed, Codex App Server connected, refresh succeeded, one child process |
+| `spctl -a` | **rejected**, as expected for an unnotarized build |
+
+**Still not reproduced: the browser-download quarantine prompt.** The download
+was made with `curl`, which sets `com.apple.provenance` but not
+`com.apple.quarantine`, so the first-launch dialog a browser user sees was never
+triggered. The `spctl` rejection is the same assessment Gatekeeper applies, and
+the documented right-click → **Open** flow is the standard remedy, but the exact
+dialog has not been observed.
 
 ### Clean-clone verification
 

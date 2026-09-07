@@ -84,8 +84,14 @@ Never claim signing or notarization that Apple has not actually granted, and
 never put Apple credentials in the repository. `notarytool` stores them in the
 keychain via `store-credentials`.
 
-## Publication boundary
+## Publication history
 
-Nothing is published automatically. The repository has no remote configured, so
-publishing is a deliberate act: add the remote, push, and create the release with
-the commands above.
+**v0.1.0 — published.** <https://github.com/shin-ieru/touch-bar-usage/releases/tag/v0.1.0>
+
+Verified after publication by downloading the artifact from the Release page,
+confirming its SHA-256 against the published checksum, extracting it, and
+launching it. Results in [`manual-test-results.md`](manual-test-results.md).
+
+Once a tag and its binary are public, treat them as immutable. Do not overwrite
+the ZIP under the same filename, move the tag, or rewrite release history — cut
+`v0.1.1` instead. Documentation-only fixes go to `main` without moving the tag.
