@@ -1,53 +1,76 @@
 import AppKit
 import TouchBarUsageKit
 
-/// Supplies the small character mark shown beside Claude usage.
+/// Supplies the small mark shown beside each provider's usage.
 ///
-/// This repository ships only an original, generated fallback mark. Anthropic's
-/// artwork is **not** bundled: we have not verified redistribution terms, and a
-/// public open-source repo is the wrong place to guess. A developer may drop
-/// their own image at `LocalAssets/claude-mascot.png` (gitignored) and it is
-/// preferred automatically. See docs/branding.md.
+/// Resolution order per provider, first match wins:
+///
+/// 1. `LocalAssets/<provider>-mascot.png` — a developer's own image (gitignored);
+/// 2. a provider-specific locally generated or locally resolved asset — Clawd
+///    poses for Claude, a locally resolved icon for Codex;
+/// 3. this repository's own placeholder mark, drawn in code.
+///
+/// **No third-party artwork is committed here.** Clawd is Anthropic's and the
+/// Codex mark is OpenAI's; both are resolved on the developer's own machine, at
+/// build time or from an already-installed application, and never redistributed.
+/// See docs/branding.md.
 enum MascotProvider {
 
     /// Path checked for a developer-supplied asset, relative to the app bundle
     /// and to the source checkout during `make run`.
-    static let localAssetRelativePath = "LocalAssets/claude-mascot.png"
-
-    /// Which source actually supplied the current mascot, for Diagnostics.
-    static var activeSource: String {
-        if loadLocalAsset() != nil { return "local override" }
-        if ClawdPoseAsset.isAvailable { return "Clawd (generated locally)" }
-        return "built-in fallback mark"
+    static func localAssetRelativePath(for providerID: String) -> String {
+        "LocalAssets/\(providerID)-mascot.png"
     }
 
-    /// `severity` selects a Clawd pose when generated assets are present; the
-    /// local override and the fallback mark are severity-independent.
-    static func mascot(height: CGFloat = 18, severity: UsageSeverity = .normal) -> NSImage {
-        if let local = loadLocalAsset() {
+    /// Which source supplied a provider's mark, for Diagnostics.
+    static func activeSource(for providerID: String) -> String {
+        if loadLocalAsset(for: providerID) != nil { return "local override" }
+        switch providerID {
+        case "claude" where ClawdPoseAsset.isAvailable:
+            return "Clawd (generated locally)"
+        case "codex" where CodexIconAsset.isAvailable:
+            return "Codex (resolved locally)"
+        default:
+            return "built-in fallback mark"
+        }
+    }
+
+    /// `severity` selects a Clawd pose when generated assets are present. Other
+    /// sources are severity-independent.
+    static func mascot(for providerID: String,
+                       height: CGFloat = 18,
+                       severity: UsageSeverity = .normal) -> NSImage {
+        if let local = loadLocalAsset(for: providerID) {
             return resized(local, height: height)
         }
-        if let clawd = ClawdPoseAsset.image(for: severity, height: height) {
-            return clawd
+        switch providerID {
+        case "claude":
+            if let clawd = ClawdPoseAsset.image(for: severity, height: height) { return clawd }
+        case "codex":
+            if let codex = CodexIconAsset.image(height: height) { return codex }
+        default:
+            break
         }
         return fallbackMark(height: height)
     }
 
     /// Looks for a local override next to the executable, inside the bundle's
     /// Resources, and in the working directory (which covers `swift run`).
-    private static func loadLocalAsset() -> NSImage? {
+    private static func loadLocalAsset(for providerID: String) -> NSImage? {
         var candidates: [URL] = []
         let bundle = Bundle.main
+        let relative = localAssetRelativePath(for: providerID)
+        let filename = "\(providerID)-mascot.png"
 
         if let resource = bundle.resourceURL {
-            candidates.append(resource.appendingPathComponent("claude-mascot.png"))
-            candidates.append(resource.appendingPathComponent(localAssetRelativePath))
+            candidates.append(resource.appendingPathComponent(filename))
+            candidates.append(resource.appendingPathComponent(relative))
         }
         // .app/Contents/MacOS/exe → repo root when running from a dev build.
         let executableDirectory = bundle.bundleURL.deletingLastPathComponent()
-        candidates.append(executableDirectory.appendingPathComponent(localAssetRelativePath))
+        candidates.append(executableDirectory.appendingPathComponent(relative))
         candidates.append(URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(localAssetRelativePath))
+            .appendingPathComponent(relative))
 
         for url in candidates where FileManager.default.fileExists(atPath: url.path) {
             if let image = NSImage(contentsOf: url) { return image }

@@ -9,8 +9,9 @@ import TouchBarUsageKit
 @MainActor
 enum PreviewRenderer {
 
-    /// The states worth eyeballing, in the order they are written out.
-    static var scenarios: [(name: String, state: ProviderState)] {
+    /// The states worth eyeballing, in the order they are written out. Each
+    /// carries a state per provider so the mixed cases are covered too.
+    static var scenarios: [(name: String, state: ProviderState, codexState: ProviderState)] {
         let now = Date()
         func snapshot(_ short: Double, _ weekly: Double) -> UsageSnapshot {
             UsageSnapshot(
@@ -25,15 +26,28 @@ enum PreviewRenderer {
                 ],
                 fetchedAt: now)
         }
+        /// Codex reporting only a weekly window — the case that must never be
+        /// padded out to a fabricated 0% five-hour figure.
+        let weeklyOnly = UsageSnapshot(
+            providerID: "codex",
+            windows: [UsageWindow(id: "seven_day", label: "W", longLabel: "Week",
+                                  usedPercent: 31, resetAt: now.addingTimeInterval(200_000),
+                                  duration: 7 * 86_400, category: .weekly)],
+            fetchedAt: now)
+
         return [
-            ("normal",        .ready(snapshot(32, 18))),
-            ("elevated",      .ready(snapshot(72, 43))),
-            ("warning",       .ready(snapshot(88, 61))),
-            ("critical",      .ready(snapshot(97, 90))),
-            ("stale",         .stale(snapshot(72, 43), reason: "offline")),
-            ("offline",       .offline),
-            ("auth-required", .needsAuthentication),
-            ("loading",       .loading),
+            ("normal",        .ready(snapshot(32, 18)),  .ready(snapshot(41, 22))),
+            ("elevated",      .ready(snapshot(72, 43)),  .ready(snapshot(84, 51))),
+            ("warning",       .ready(snapshot(88, 61)),  .ready(snapshot(90, 55))),
+            ("critical",      .ready(snapshot(97, 90)),  .ready(snapshot(100, 19))),
+            ("stale",         .stale(snapshot(72, 43), reason: "offline"), .ready(snapshot(60, 30))),
+            ("offline",       .offline,                  .offline),
+            ("auth-required", .needsAuthentication,      .needsAuthentication),
+            ("loading",       .loading,                  .loading),
+            // Failure isolation: one provider healthy, the other not.
+            ("mixed",         .ready(snapshot(72, 43)),  .needsAuthentication),
+            ("codex-missing", .ready(snapshot(72, 43)),  .notInstalled),
+            ("codex-weekly-only", .ready(snapshot(72, 43)), .ready(weeklyOnly)),
         ]
     }
 
@@ -49,21 +63,48 @@ enum PreviewRenderer {
     static func render(into directory: URL) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
+        var count = 0
+
+        // Normal mode: the small Control Strip entry point, at each severity.
+        for (name, severity) in [("normal", UsageSeverity.normal), ("elevated", .elevated),
+                                 ("warning", .warning), ("critical", .critical)] {
+            let tray = UsageTrayView(severity: severity)
+            write(view: tray, size: tray.frame.size,
+                  to: directory.appendingPathComponent("tray-\(name).png"))
+            count += 1
+        }
+        let trayLoading = UsageTrayView(severity: nil)
+        write(view: trayLoading, size: trayLoading.frame.size,
+              to: directory.appendingPathComponent("tray-loading.png"))
+        count += 1
+
+        // Usage mode: the expanded dual-provider dashboard in each state.
         for scenario in scenarios {
-            let view = ClaudeCompactView(viewModel: TouchBarViewModel.make(state: scenario.state))
-            write(view: view, size: view.intrinsicContentSize,
-                  to: directory.appendingPathComponent("compact-\(scenario.name).png"))
+            let model = DashboardViewModel(entries: [
+                .init(providerID: "claude", displayName: "Claude", state: scenario.state),
+                .init(providerID: "codex", displayName: "Codex", state: scenario.codexState),
+            ])
+            let dashboard = UsageDashboardView(model: model)
+            write(view: dashboard, size: NSSize(width: 760, height: 30),
+                  to: directory.appendingPathComponent("dashboard-\(scenario.name).png"))
+            count += 1
         }
 
-        // One detail render is enough to check the expanded layout.
-        // The detail bar has no intrinsic width; the Touch Bar gives it the
-        // full strip, so render it at a representative width.
-        let detail = ClaudeDetailView(detail: DetailViewModel.make(state: scenarios[1].state))
-        write(view: detail, size: NSSize(width: 680, height: 30),
-              to: directory.appendingPathComponent("detail-elevated.png"))
+        // A provider detail page, including the Back and Close controls.
+        let detailModel = DashboardViewModel(entries: [
+            .init(providerID: "claude", displayName: "Claude", state: scenarios[1].state),
+        ])
+        if let entry = detailModel.entry(providerID: "claude") {
+            let detail = ProviderDetailView(
+                detail: entry.detail(),
+                mascot: MascotProvider.mascot(for: "claude", height: 30, severity: .elevated))
+            write(view: detail, size: NSSize(width: 820, height: 30),
+                  to: directory.appendingPathComponent("detail-claude.png"))
+            count += 1
+        }
 
         FileHandle.standardOutput.write(
-            Data("Rendered \(scenarios.count + 1) previews to \(directory.path)\n".utf8))
+            Data("Rendered \(count) previews to \(directory.path)\n".utf8))
     }
 
     private static func write(view: NSView, size: NSSize, to url: URL) {

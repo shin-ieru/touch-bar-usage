@@ -9,10 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var touchBar: TouchBarController!
     private var diagnosticsWindow: DiagnosticsWindowController?
 
-    private let provider = ClaudeUsageProvider()
-    private let cache = CacheStore()
-    private var coordinator: RefreshCoordinator!
+    /// One coordinator per provider. `RefreshCoordinator` wraps a single provider
+    /// deliberately: backoff and last-good-snapshot are per-provider, so one
+    /// provider being rate limited or offline cannot stall the other.
+    private var coordinators: [(provider: UsageProvider, coordinator: RefreshCoordinator)] = []
+    private var states: [String: ProviderState] = [:]
 
+    private let cache = CacheStore()
     private var refreshTimer: Timer?
     private var didTearDown = false
 
@@ -20,71 +23,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Background utility: no Dock icon, no main window.
         NSApp.setActivationPolicy(.accessory)
 
-        coordinator = RefreshCoordinator(provider: provider, cache: cache)
+        let providers: [UsageProvider] = [
+            ClaudeUsageProvider(),
+            CodexUsageProvider(),
+        ]
+        for provider in providers {
+            states[provider.id] = .loading
+            coordinators.append((provider, RefreshCoordinator(provider: provider, cache: cache)))
+        }
 
         menuBar = MenuBarController()
-        menuBar.onRefresh = { [weak self] in self?.refresh(trigger: .manual) }
-        menuBar.onToggleTouchBar = { [weak self] enabled in self?.setTouchBar(enabled: enabled) }
+        menuBar.onRefresh = { [weak self] in self?.refreshAll(trigger: .manual) }
+        menuBar.onShowUsageBar = { [weak self] in self?.touchBar.openUsageMode() }
         menuBar.onShowDiagnostics = { [weak self] in self?.showDiagnostics() }
         menuBar.onQuit = { NSApp.terminate(nil) }
 
         touchBar = TouchBarController()
-        touchBar.onDetailShown = { [weak self] in self?.refresh(trigger: .manual) }
-        let installed = touchBar.install()
-        menuBar.setTouchBarSupported(touchBar.isSupported)
+        touchBar.onUsageModeOpened = { [weak self] in self?.refreshAll(trigger: .manual) }
+        let installed = touchBar.installTrayItem()
+        menuBar.setTouchBarStatus(traySupported: touchBar.isTrayItemSupported,
+                                  trayInstalled: installed,
+                                  usageBarSupported: touchBar.isUsageBarSupported)
         if !installed {
-            log.warning("running without touch bar presentation")
+            log.warning("tray item not installed; use the menu to open usage mode")
         }
 
-        // Development affordance: pin the app to one severity band so the higher
-        // bands can be checked on the physical bar without waiting for real
-        // usage to climb. Unset in normal use, so it can never misreport.
-        if let forced = DebugState.forcedState() {
-            log.warning("forced state active", ["state": forced.diagnosticLabel])
-            apply(forced)
+        if let forced = DebugState.forcedStates() {
+            log.warning("forced state active")
+            states = forced
+            publish()
             return
         }
 
-        observeState()
+        observeStates()
         startRefreshTimer()
         observeWake()
+        openUsageModeAtLaunchIfRequested()
 
-        Task {
-            // Show cached numbers instantly, marked stale, then refresh.
-            await coordinator.primeFromCache()
-            await coordinator.refresh(trigger: .launch)
+        Task { [weak self] in
+            guard let self else { return }
+            for entry in coordinators {
+                await entry.coordinator.primeFromCache()
+            }
+            await refreshAllAsync(trigger: .launch)
         }
     }
 
     // MARK: - State plumbing
 
-    private func observeState() {
-        Task { [weak self] in
-            guard let self else { return }
-            await coordinator.addObserver { state in
-                Task { @MainActor [weak self] in self?.apply(state) }
+    private func observeStates() {
+        for entry in coordinators {
+            let id = entry.provider.id
+            Task { [weak self] in
+                await entry.coordinator.addObserver { state in
+                    Task { @MainActor [weak self] in
+                        self?.states[id] = state
+                        self?.publish()
+                    }
+                }
             }
         }
     }
 
-    private func apply(_ state: ProviderState) {
-        touchBar.update(state: state)
-        menuBar.update(state: state)
+    private func publish() {
+        let model = DashboardViewModel(entries: coordinators.map { entry in
+            DashboardViewModel.Entry(
+                providerID: entry.provider.id,
+                displayName: entry.provider.displayName,
+                state: states[entry.provider.id] ?? .loading)
+        })
+        touchBar.update(model: model)
+        menuBar.update(model: model)
     }
 
-    private func refresh(trigger: RefreshCoordinator.Trigger) {
-        Task { await coordinator.refresh(trigger: trigger) }
+    /// Providers are refreshed independently and concurrently; one failing or
+    /// hanging must not delay the other.
+    private func refreshAll(trigger: RefreshCoordinator.Trigger) {
+        Task { await refreshAllAsync(trigger: trigger) }
+    }
+
+    private func refreshAllAsync(trigger: RefreshCoordinator.Trigger) async {
+        await withTaskGroup(of: Void.self) { group in
+            for entry in coordinators {
+                group.addTask { await entry.coordinator.refresh(trigger: trigger) }
+            }
+        }
     }
 
     /// One timer, coarse tolerance, so the app is effectively idle between ticks.
     private func startRefreshTimer() {
         refreshTimer?.invalidate()
-        let interval: TimeInterval = 300
-        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh(trigger: .timer)
-                // Age the snapshot locally even when the network is gone.
-                await self?.coordinator.reevaluateStaleness()
+                guard let self else { return }
+                self.refreshAll(trigger: .timer)
+                for entry in self.coordinators {
+                    await entry.coordinator.reevaluateStaleness()
+                }
             }
         }
         timer.tolerance = 60
@@ -96,21 +131,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refresh(trigger: .wake) }
+            Task { @MainActor in self?.refreshAll(trigger: .wake) }
         }
     }
 
-    private func setTouchBar(enabled: Bool) {
-        if enabled {
-            touchBar.install()
-            Task { [weak self] in
-                guard let self else { return }
-                let state = await coordinator.state
-                await MainActor.run { self.touchBar.update(state: state) }
-            }
-        } else {
-            touchBar.teardown()
+    /// Development affordance: open usage mode shortly after launch so the
+    /// presentation path can be checked on the physical bar independently of the
+    /// menu that normally triggers it. Auto-dismiss still applies.
+    private func openUsageModeAtLaunchIfRequested() {
+        guard ProcessInfo.processInfo.environment["TBU_OPEN_USAGE_AT_LAUNCH"] == "1" else { return }
+        let timer = Timer(timeInterval: 3, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.touchBar.openUsageMode() }
         }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func showDiagnostics() {
@@ -132,20 +165,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         entries.append(.init(label: "macOS", value: ProcessInfo.processInfo.operatingSystemVersionString))
         entries.append(.init(label: "Touch Bar hardware", value: TouchBarHardware.description))
         entries.append(contentsOf: await MainActor.run { touchBar.diagnostics })
-        entries.append(.init(label: "Touch Bar presentation",
-                             value: await MainActor.run { menuBar.isTouchBarEnabled ? "on" : "off" }))
-        entries.append(.init(label: "Mascot", value: await MainActor.run { MascotProvider.activeSource }))
-        entries.append(contentsOf: await provider.diagnostics())
 
-        let state = await coordinator.state
-        entries.append(.init(label: "Current state", value: state.diagnosticLabel))
-        if let last = await coordinator.lastSuccessfulFetch {
-            entries.append(.init(label: "Last successful refresh", value: ResetFormatter.age(since: last)))
-        } else {
-            entries.append(.init(label: "Last successful refresh", value: "never"))
+        for entry in coordinators {
+            let id = entry.provider.id
+            entries.append(.init(label: "—", value: entry.provider.displayName))
+            entries.append(.init(label: "\(entry.provider.displayName) state",
+                                 value: (states[id] ?? .loading).diagnosticLabel))
+            entries.append(.init(label: "\(entry.provider.displayName) mascot",
+                                 value: await MainActor.run { MascotProvider.activeSource(for: id) }))
+            entries.append(contentsOf: await entry.provider.diagnostics())
+            if let last = await entry.coordinator.lastSuccessfulFetch {
+                entries.append(.init(label: "\(entry.provider.displayName) last refresh",
+                                     value: ResetFormatter.age(since: last)))
+            } else {
+                entries.append(.init(label: "\(entry.provider.displayName) last refresh", value: "never"))
+            }
         }
-        entries.append(.init(label: "Refresh interval",
-                             value: "\(Int(await coordinator.refreshInterval / 60)) min"))
+
         entries.append(.init(label: "Launch at login", value: LoginItemService.statusDescription))
         entries.append(.init(label: "Telemetry", value: "none"))
         return entries
@@ -158,38 +194,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Idempotent: `applicationWillTerminate` and the signal handlers can both
-    /// reach here, and removing the tray item twice must be harmless.
+    /// reach here, and tearing down twice must be harmless.
     func tearDown() {
         guard !didTearDown else { return }
         didTearDown = true
         refreshTimer?.invalidate()
         touchBar?.teardown()
+        CodexAppServerClient.shutdownShared()
         log.info("terminated cleanly")
     }
 }
 
 /// Development-only state pinning, driven by `TBU_FORCE_SEVERITY`.
 ///
-/// Exists so the `warning` and `critical` presentations — including Clawd's
-/// poses — can be verified on the physical Touch Bar without waiting for real
-/// quota to reach 85% or 95%. Percentages and pose always agree, so the forced
-/// state is internally consistent rather than a mascot lying about the numbers.
-///
-/// When the variable is unset (the normal case) this returns nil and the app
-/// behaves exactly as it otherwise would.
+/// Exists so the higher severity bands and the failure presentations can be
+/// verified on the physical Touch Bar without waiting for real quota to move.
+/// Percentages and mascot pose always agree, so a forced state is internally
+/// consistent rather than a mascot disagreeing with the numbers beside it.
 ///
 ///     TBU_FORCE_SEVERITY=critical "dist/Touch Bar Usage.app/Contents/MacOS/TouchBarUsage"
+///
+/// Applies to every provider, plus `TBU_FORCE_CODEX` to force just Codex — which
+/// is how the mixed "one provider fine, one signed out" layout is checked.
 enum DebugState {
-    static func forcedState() -> ProviderState? {
-        guard let raw = ProcessInfo.processInfo.environment["TBU_FORCE_SEVERITY"]?.lowercased() else {
-            return nil
-        }
-        // Non-numeric states are reachable too, so their layouts can be checked.
+    static func forcedStates() -> [String: ProviderState]? {
+        let environment = ProcessInfo.processInfo.environment
+        guard let raw = environment["TBU_FORCE_SEVERITY"]?.lowercased() else { return nil }
+        guard let claude = state(named: raw) else { return nil }
+
+        let codexRaw = environment["TBU_FORCE_CODEX"]?.lowercased()
+        let codex = codexRaw.flatMap { state(named: $0) } ?? claude
+        return ["claude": claude, "codex": codex]
+    }
+
+    static func state(named raw: String) -> ProviderState? {
         switch raw {
         case "auth", "needsauthentication": return .needsAuthentication
         case "offline":                     return .offline
         case "ratelimited":                 return .rateLimited(retryAfter: 300)
         case "loading":                     return .loading
+        case "notinstalled":                return .notInstalled
+        case "failed":                      return .failed("forced")
+        case "weeklyonly":                  return .ready(snapshot(short: nil, weekly: 31))
         default: break
         }
 
@@ -203,22 +249,24 @@ enum DebugState {
         default:         return nil
         }
 
-        let now = Date()
-        let snapshot = UsageSnapshot(
-            providerID: "claude",
-            windows: [
-                UsageWindow(id: "five_hour", label: "5h", longLabel: "5h",
-                            usedPercent: percentages.short,
-                            resetAt: now.addingTimeInterval(8_000),
-                            duration: 5 * 3600, category: .short),
-                UsageWindow(id: "seven_day", label: "W", longLabel: "Week",
-                            usedPercent: percentages.weekly,
-                            resetAt: now.addingTimeInterval(180_000),
-                            duration: 7 * 86_400, category: .weekly),
-            ],
-            fetchedAt: now)
+        let value = snapshot(short: percentages.short, weekly: percentages.weekly)
+        return raw == "stale" ? .stale(value, reason: "forced") : .ready(value)
+    }
 
-        return raw == "stale" ? .stale(snapshot, reason: "forced") : .ready(snapshot)
+    private static func snapshot(short: Double?, weekly: Double) -> UsageSnapshot {
+        let now = Date()
+        var windows: [UsageWindow] = []
+        if let short {
+            windows.append(UsageWindow(id: "five_hour", label: "5h", longLabel: "5h",
+                                       usedPercent: short,
+                                       resetAt: now.addingTimeInterval(8_000),
+                                       duration: 5 * 3600, category: .short))
+        }
+        windows.append(UsageWindow(id: "seven_day", label: "W", longLabel: "Week",
+                                   usedPercent: weekly,
+                                   resetAt: now.addingTimeInterval(180_000),
+                                   duration: 7 * 86_400, category: .weekly))
+        return UsageSnapshot(providerID: "claude", windows: windows, fetchedAt: now)
     }
 }
 
@@ -235,15 +283,7 @@ enum AppInfo {
 /// it just reports the hardware as absent in Diagnostics.
 enum TouchBarHardware {
     static var isPresent: Bool {
-        // TouchBarServer only runs on machines with the physical bar.
-        !runningProcessPaths().filter { $0.hasSuffix("/TouchBarServer") }.isEmpty
+        FileManager.default.fileExists(atPath: "/usr/libexec/TouchBarServer")
     }
-
     static var description: String { isPresent ? "detected" : "not detected" }
-
-    private static func runningProcessPaths() -> [String] {
-        NSWorkspace.shared.runningApplications.compactMap { $0.executableURL?.path }
-            + [FileManager.default.fileExists(atPath: "/usr/libexec/TouchBarServer")
-               ? "/usr/libexec/TouchBarServer" : ""]
-    }
 }

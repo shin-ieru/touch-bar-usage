@@ -1,174 +1,216 @@
 import AppKit
 import TouchBarUsageKit
 
-/// Owns the Touch Bar presentation for one provider.
+/// Drives the two-state Touch Bar experience.
 ///
-/// Phase 1 renders a single provider. The controller talks only to
-/// `TouchBarViewModel` / `DetailViewModel`, so adding a second provider later is
-/// a layout change here, not a rewrite (see docs/codex-handoff.md).
+/// **Normal mode** is the resting state: macOS keeps its own Touch Bar and this
+/// app contributes only a small Control Strip entry point, so brightness, volume
+/// and per-app controls behave exactly as they normally would.
+///
+/// **Usage mode** is entered by tapping that entry point (or from the menu bar)
+/// and presents the expanded Claude + Codex dashboard. It is intentionally
+/// temporary: closing it, or letting it auto-dismiss, hands the bar straight back
+/// to macOS.
+///
+/// Phase 1 kept a widget permanently presented over the whole strip. That was
+/// abandoned because a system-modal bar is inherently full-width, so it
+/// permanently displaced Apple's controls. See docs/touchbar-research.md.
 @MainActor
 final class TouchBarController: NSObject {
 
     private let bridge: SystemModalTouchBarBridge
     private let log = Log(category: "touchbar")
 
-    private var compactView: ClaudeCompactView?
-    private var detailBar: NSTouchBar?
-    private var detailView: ClaudeDetailView?
+    private var trayView: UsageTrayView?
+    private var dashboardView: UsageDashboardView?
+    private var detailView: ProviderDetailView?
 
-    private var state: ProviderState = .loading
-    /// Refreshes only the countdown text, and only while the detail bar is up.
-    private var detailTimer: Timer?
+    private var model = DashboardViewModel(entries: [])
+    private(set) var presentation: TouchBarPresentation = .normal
 
-    /// Called when the user taps the widget, so the app can refresh opportunistically.
-    var onDetailShown: (() -> Void)?
+    /// Auto-dismiss: usage mode should not sit open indefinitely.
+    private var dismissTimer: Timer?
+    /// Refreshes the countdown text while a detail page is visible.
+    private var tickTimer: Timer?
 
-    /// Apple's Control Strip item would be the coexisting path, but it does not
-    /// render on macOS 26.6.2 (see docs/touchbar-research.md). Opt in with
-    /// `TBU_TOUCHBAR_STRATEGY=controlStripItem` to re-measure on a future release.
-    static var usesControlStripItem: Bool {
-        ProcessInfo.processInfo.environment["TBU_TOUCHBAR_STRATEGY"] == "controlStripItem"
-    }
+    /// Chosen after physical testing: long enough to read both providers and tap
+    /// into a detail page, short enough that a stray tap does not strand the bar.
+    static let autoDismissInterval: TimeInterval = 12
 
-    private static let itemIdentifier = "com.gabrielanyog.touchbarusage.claude"
-    private static let detailItemIdentifier = NSTouchBarItem.Identifier("com.gabrielanyog.touchbarusage.claude.detail")
+    /// Called when usage mode opens, so the app can refresh opportunistically.
+    var onUsageModeOpened: (() -> Void)?
 
-    var isSupported: Bool { bridge.isSupported }
+    private static let trayIdentifier = "com.gabrielanyog.touchbarusage.tray"
+
+    var isTrayItemSupported: Bool { bridge.isTrayItemSupported }
+    var isUsageBarSupported: Bool { bridge.isUsageBarSupported }
+    var isTrayItemInstalled: Bool { bridge.isTrayItemInstalled }
 
     override init() {
-        bridge = SystemModalTouchBarBridge(identifier: Self.itemIdentifier)
+        bridge = SystemModalTouchBarBridge(identifier: Self.trayIdentifier)
         super.init()
     }
 
+    // MARK: - Normal mode
 
-    /// Installs the Control Strip item. Returns false when private API is missing,
-    /// in which case the app stays menu-bar-only rather than showing a broken bar.
+    /// Installs the small persistent entry point. Returns false when the private
+    /// API is unavailable, in which case the app runs menu-bar-only rather than
+    /// showing a broken bar.
     @discardableResult
-    func install() -> Bool {
-        guard bridge.isSupported else {
-            log.warning("touch bar unsupported; running menu bar only")
+    func installTrayItem() -> Bool {
+        guard bridge.isTrayItemSupported else {
+            log.warning("tray item unsupported; menu bar only")
             return false
         }
-        let view = ClaudeCompactView(viewModel: TouchBarViewModel.make(state: state))
-        view.onTap = { [weak self] in self?.showDetail() }
-        compactView = view
-        let surface = CompactSurfaceView(hosting: view)
-        // Prefer Apple's own coexistence mechanism; fall back to the modal bar.
-        if Self.usesControlStripItem, bridge.presentControlStripItem(view: surface) {
-            return true
+        let view = UsageTrayView(severity: model.worstSeverity)
+        view.onTap = { [weak self] in self?.openUsageMode() }
+        trayView = view
+        return bridge.installUsageTrayItem(view: view)
+    }
+
+    func removeTrayItem() {
+        bridge.removeUsageTrayItem()
+        trayView = nil
+    }
+
+    // MARK: - State
+
+    func update(model: DashboardViewModel) {
+        self.model = model
+        trayView?.apply(severity: model.worstSeverity)
+
+        switch presentation {
+        case .normal:
+            break
+        case .dashboard:
+            dashboardView?.apply(model)
+        case .detail(let providerID):
+            if let entry = model.entry(providerID: providerID) {
+                detailView?.apply(entry.detail())
+            }
         }
-        return bridge.presentAlongsideControlStrip(view: surface)
     }
 
-    func update(state: ProviderState) {
-        self.state = state
-        compactView?.apply(TouchBarViewModel.make(state: state))
-        if bridge.isPresentingDetail {
-            refreshDetail()
+    // MARK: - Usage mode
+
+    /// Opens the expanded dashboard. Also the target of the menu bar's
+    /// "Show Usage on Touch Bar", which is the fallback if the tray item is not
+    /// rendered on a given macOS version.
+    func openUsageMode() {
+        guard bridge.isUsageBarSupported else {
+            log.warning("usage bar unsupported")
+            return
         }
-    }
-
-    // MARK: - Detail presentation
-
-    private func showDetail() {
-        let bar = NSTouchBar()
-        bar.delegate = self
-        bar.defaultItemIdentifiers = [Self.detailItemIdentifier]
-        detailBar = bar
-        bridge.presentDetail(bar)
-        startDetailTimer()
-        onDetailShown?()
-    }
-
-    private func hideDetail() {
-        stopDetailTimer()
-        // Dismissing the detail bar also re-presents the compact widget beside
-        // the Control Strip; the bridge owns that sequencing.
-        bridge.dismissDetail()
-        detailBar = nil
+        let view = UsageDashboardView(model: model)
+        view.onSelectProvider = { [weak self] id in self?.showDetail(providerID: id) }
+        view.onClose = { [weak self] in self?.closeUsageMode() }
+        view.onInteraction = { [weak self] in self?.restartDismissTimer() }
+        dashboardView = view
         detailView = nil
+
+        if bridge.isPresentingUsageBar {
+            bridge.updateUsageBar(view: view)
+        } else {
+            bridge.presentUsageBar(view: view)
+        }
+        presentation = .dashboard
+        restartDismissTimer()
+        onUsageModeOpened?()
     }
 
-    private func refreshDetail() {
-        detailView?.apply(DetailViewModel.make(state: state))
+    private func showDetail(providerID: String) {
+        guard let entry = model.entry(providerID: providerID) else { return }
+        let view = ProviderDetailView(
+            detail: entry.detail(),
+            mascot: MascotProvider.mascot(for: providerID, height: 30,
+                                          severity: entry.severity ?? .normal))
+        view.onBack = { [weak self] in self?.openUsageMode() }
+        view.onClose = { [weak self] in self?.closeUsageMode() }
+        view.onInteraction = { [weak self] in self?.restartDismissTimer() }
+        detailView = view
+        dashboardView = nil
+
+        bridge.updateUsageBar(view: view)
+        presentation = .detail(providerID: providerID)
+        restartDismissTimer()
+        startTickTimer()
     }
 
-    /// The countdown ticks locally from the cached `resetAt`; it never triggers a
-    /// network refresh, and it only runs while the detail bar is on screen.
-    private func startDetailTimer() {
-        stopDetailTimer()
+    /// Leaves usage mode and returns the Touch Bar to macOS. The tray item stays.
+    func closeUsageMode() {
+        stopDismissTimer()
+        stopTickTimer()
+        bridge.dismissUsageBar()
+        dashboardView = nil
+        detailView = nil
+        presentation = .normal
+        log.info("usage mode closed; native touch bar restored")
+    }
+
+    // MARK: - Auto-dismiss
+
+    /// Restarted by every interaction, so the bar never closes under the user's
+    /// finger. Only usage mode is timed; normal mode has nothing to dismiss.
+    private func restartDismissTimer() {
+        stopDismissTimer()
+        let timer = Timer(timeInterval: Self.autoDismissInterval, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.autoDismiss() }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        dismissTimer = timer
+    }
+
+    private func autoDismiss() {
+        guard presentation.isUsageModeOpen else { return }
+        log.info("usage mode auto-dismissed")
+        closeUsageMode()
+    }
+
+    private func stopDismissTimer() {
+        dismissTimer?.invalidate()
+        dismissTimer = nil
+    }
+
+    /// Countdown text ticks locally from the cached `resetAt`; it never triggers
+    /// a network refresh, and only runs while a detail page is on screen.
+    private func startTickTimer() {
+        stopTickTimer()
         let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshDetail() }
+            Task { @MainActor in
+                guard let self, case .detail(let id) = self.presentation,
+                      let entry = self.model.entry(providerID: id) else { return }
+                self.detailView?.apply(entry.detail())
+            }
         }
         timer.tolerance = 10
         RunLoop.main.add(timer, forMode: .common)
-        detailTimer = timer
+        tickTimer = timer
     }
 
-    private func stopDetailTimer() {
-        detailTimer?.invalidate()
-        detailTimer = nil
+    private func stopTickTimer() {
+        tickTimer?.invalidate()
+        tickTimer = nil
     }
 
     // MARK: - Teardown
 
-    /// Removes the Control Strip item so the Touch Bar returns to normal and a
-    /// relaunch does not leave a duplicate behind.
     func teardown() {
-        stopDetailTimer()
-        bridge.dismiss()
-        compactView = nil
-        detailBar = nil
+        stopDismissTimer()
+        stopTickTimer()
+        bridge.teardown()
+        trayView = nil
+        dashboardView = nil
         detailView = nil
+        presentation = .normal
     }
 
     var diagnostics: [DiagnosticEntry] {
-        SystemModalTouchBarBridge.availabilityReport
-    }
-}
-
-/// Fixed-size surface hosting the compact widget.
-///
-/// A system-modal bar presented at `placement: 0` needs its item view to carry a
-/// concrete frame — an Auto Layout-only view collapses and is never drawn. The
-/// surface is sized explicitly and the widget is pinned to its leading edge, so
-/// Apple's Control Strip keeps the right-hand side of the bar.
-final class CompactSurfaceView: NSView {
-    /// Width of the custom region. Wide enough for the widget plus headroom,
-    /// while leaving the Control Strip its own space on the right.
-    static let surfaceWidth: CGFloat = 420
-    static let surfaceHeight: CGFloat = 30
-
-    init(hosting content: NSView) {
-        super.init(frame: NSRect(x: 0, y: 0,
-                                 width: Self.surfaceWidth, height: Self.surfaceHeight))
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.centerYAnchor.constraint(equalTo: centerYAnchor),
-            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: Self.surfaceWidth, height: Self.surfaceHeight)
-    }
-}
-
-extension TouchBarController: NSTouchBarDelegate {
-    nonisolated func touchBar(_ touchBar: NSTouchBar,
-                              makeItemForIdentifier identifier: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
-        MainActor.assumeIsolated {
-            guard identifier == Self.detailItemIdentifier else { return nil }
-            let view = ClaudeDetailView(detail: DetailViewModel.make(state: state))
-            view.onDone = { [weak self] in self?.hideDetail() }
-            detailView = view
-            let item = NSCustomTouchBarItem(identifier: identifier)
-            item.view = view
-            return item
-        }
+        var entries = SystemModalTouchBarBridge.availabilityReport
+        entries.append(.init(label: "Touch Bar tray item",
+                             value: bridge.isTrayItemInstalled ? "installed" : "not installed"))
+        entries.append(.init(label: "Touch Bar mode",
+                             value: presentation.isUsageModeOpen ? "usage mode" : "normal (native)"))
+        return entries
     }
 }
