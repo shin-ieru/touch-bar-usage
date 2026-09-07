@@ -1,0 +1,7 @@
+{
+  "five_hour":        { "utilization": 30, "resets_at": "2026-09-07T18:00:00Z", "brand_new_field": { "a": 1 } },
+  "seven_day":        { "utilization": 40, "resets_at": "2026-09-09T16:00:00Z" },
+  "thirty_day_future":{ "utilization": 7,  "resets_at": "2026-10-01T00:00:00Z" },
+  "account_tier":     "pro",
+  "server_time":      "2026-09-07T12:00:00Z"
+}
