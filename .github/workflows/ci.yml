@@ -43,11 +43,25 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist"
 
-      # A clean checkout must never contain a local mascot asset.
-      - name: Assert no local assets in checkout
+      # A clean checkout must never contain mascot artwork, and must build and
+      # run without it. CI deliberately does NOT run `make assets`: fetching
+      # Anthropic's character is a developer-machine action, not a CI one.
+      - name: Assert no mascot artwork in checkout
         run: |
-          if [ -e LocalAssets/claude-mascot.png ]; then
-            echo "LocalAssets must not be committed"; exit 1
+          for path in LocalAssets/claude-mascot.png GeneratedAssets clawd_presets.h; do
+            if [ -e "$path" ]; then
+              echo "$path must not be committed"; exit 1
+            fi
+          done
+          if git ls-files | grep -E 'clawd-poses\.json'; then
+            echo "Clawd pose data must not be committed"; exit 1
+          fi
+
+      # The app must build and run with only its own fallback mark.
+      - name: Assert the bundle ships no Clawd assets
+        run: |
+          if [ -e "dist/Touch Bar Usage.app/Contents/Resources/clawd-poses.json" ]; then
+            echo "CI bundle unexpectedly contains Clawd assets"; exit 1
           fi
 
   audit:

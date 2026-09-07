@@ -63,6 +63,50 @@ else
   echo "  ok: PreviewOutput/ untracked"
 fi
 
+echo "==> Checking generated Clawd assets are not tracked"
+# Clawd is Anthropic's character and the upstream pose library publishes no
+# licence, so none of it may ever be committed here.
+if files | grep -E '^GeneratedAssets/|clawd-poses\.json|clawd_presets\.h' 2>/dev/null; then
+  echo "FAIL: generated Clawd pose data must stay gitignored"; status=1
+else
+  echo "  ok: no Clawd pose data tracked"
+fi
+
+echo "==> Checking the mascot has no runtime network dependency"
+# Pose data is fetched at build time by Scripts/, never by the running app.
+if files | grep -E '^Sources/.*(Mascot|Clawd)' | xargs grep -nE 'URLSession|dataTask|URLRequest|fetch\(' 2>/dev/null; then
+  echo "FAIL: mascot code must not perform network requests at runtime"; status=1
+else
+  echo "  ok: mascot resolves from disk only"
+fi
+
+echo "==> Checking Anthropic is the only network destination"
+offenders="$(files | grep -E '^Sources/.*\.swift$' | xargs grep -lE 'URLSession' 2>/dev/null \
+  | grep -v 'AnthropicUsageClient.swift' || true)"
+if [ -n "$offenders" ]; then
+  echo "$offenders" | sed 's/^/  unexpected URLSession use: /'
+  echo "FAIL: network access belongs in AnthropicUsageClient only"; status=1
+else
+  echo "  ok: URLSession confined to AnthropicUsageClient"
+fi
+
+echo "==> Checking no synthetic Escape key is injected"
+# This hardware has a physical Escape key; synthesising one would also risk
+# pulling in an Accessibility permission we deliberately do not request.
+if files | grep -E '^Sources/' | xargs grep -nE 'escapeKeyReplacementItemIdentifier' 2>/dev/null; then
+  echo "FAIL: no synthetic Escape item should be injected"; status=1
+else
+  echo "  ok: no synthetic Escape item"
+fi
+
+echo "==> Checking no broad permissions are requested"
+if files | grep -E '^Sources/|Info\.plist|\.entitlements' \
+   | xargs grep -nE 'NSAccessibility|kAXTrusted|ScreenCapture|InputMonitoring|com\.apple\.security\.automation' 2>/dev/null; then
+  echo "FAIL: unexpected permission request"; status=1
+else
+  echo "  ok: no Accessibility/Screen Recording/Input Monitoring requests"
+fi
+
 echo "==> Listing tracked binary assets for licensing review"
 binaries="$(files | grep -iE '\.(png|jpg|jpeg|gif|icns|pdf|tiff|svg)$' || true)"
 if [ -n "$binaries" ]; then
