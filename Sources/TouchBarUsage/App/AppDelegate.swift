@@ -36,6 +36,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log.warning("running without touch bar presentation")
         }
 
+        // Development affordance: pin the app to one severity band so the higher
+        // bands can be checked on the physical bar without waiting for real
+        // usage to climb. Unset in normal use, so it can never misreport.
+        if let forced = DebugState.forcedState() {
+            log.warning("forced state active", ["state": forced.diagnosticLabel])
+            apply(forced)
+            return
+        }
+
         observeState()
         startRefreshTimer()
         observeWake()
@@ -156,6 +165,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshTimer?.invalidate()
         touchBar?.teardown()
         log.info("terminated cleanly")
+    }
+}
+
+/// Development-only state pinning, driven by `TBU_FORCE_SEVERITY`.
+///
+/// Exists so the `warning` and `critical` presentations — including Clawd's
+/// poses — can be verified on the physical Touch Bar without waiting for real
+/// quota to reach 85% or 95%. Percentages and pose always agree, so the forced
+/// state is internally consistent rather than a mascot lying about the numbers.
+///
+/// When the variable is unset (the normal case) this returns nil and the app
+/// behaves exactly as it otherwise would.
+///
+///     TBU_FORCE_SEVERITY=critical "dist/Touch Bar Usage.app/Contents/MacOS/TouchBarUsage"
+enum DebugState {
+    static func forcedState() -> ProviderState? {
+        guard let raw = ProcessInfo.processInfo.environment["TBU_FORCE_SEVERITY"]?.lowercased() else {
+            return nil
+        }
+        // Non-numeric states are reachable too, so their layouts can be checked.
+        switch raw {
+        case "auth", "needsauthentication": return .needsAuthentication
+        case "offline":                     return .offline
+        case "ratelimited":                 return .rateLimited(retryAfter: 300)
+        case "loading":                     return .loading
+        default: break
+        }
+
+        let percentages: (short: Double, weekly: Double)
+        switch raw {
+        case "normal":   percentages = (32, 18)
+        case "elevated": percentages = (72, 43)
+        case "warning":  percentages = (88, 61)
+        case "critical": percentages = (97, 90)
+        case "stale":    percentages = (72, 43)
+        default:         return nil
+        }
+
+        let now = Date()
+        let snapshot = UsageSnapshot(
+            providerID: "claude",
+            windows: [
+                UsageWindow(id: "five_hour", label: "5h", longLabel: "5h",
+                            usedPercent: percentages.short,
+                            resetAt: now.addingTimeInterval(8_000),
+                            duration: 5 * 3600, category: .short),
+                UsageWindow(id: "seven_day", label: "W", longLabel: "Week",
+                            usedPercent: percentages.weekly,
+                            resetAt: now.addingTimeInterval(180_000),
+                            duration: 7 * 86_400, category: .weekly),
+            ],
+            fetchedAt: now)
+
+        return raw == "stale" ? .stale(snapshot, reason: "forced") : .ready(snapshot)
     }
 }
 

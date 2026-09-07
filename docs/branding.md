@@ -77,11 +77,30 @@ Four poses map to the severity bands:
 >= 95%         panic
 ```
 
-The pose **only ever reflects actual usage**. There is no demo or cycle mode: the
-mascot is a second channel for the same information the percentages carry, and a
-pose that did not match real usage would be misinformation. To see the other
-poses without waiting for your quota to climb, run `make preview` and look at
-`PreviewOutput/compact-*.png`.
+The pose **only ever reflects actual usage**. There is no demo or cycle mode in
+the shipping UI: the mascot is a second channel for the same information the
+percentages carry, and a pose that did not match real usage would be
+misinformation.
+
+To see the other poses without waiting for your quota to climb:
+
+```bash
+make preview                    # renders all four to PreviewOutput/compact-*.png
+```
+
+or, to check them on the physical bar, pin the whole app to a band with a
+development-only environment variable:
+
+```bash
+TBU_FORCE_SEVERITY=critical "dist/Touch Bar Usage.app/Contents/MacOS/TouchBarUsage"
+```
+
+Accepted values: `normal`, `elevated`, `warning`, `critical`, `stale`, `offline`,
+`auth`, `ratelimited`, `loading`. The percentages and the pose are pinned
+together, so the forced state stays internally consistent — the mascot never
+disagrees with the numbers beside it. Unset the variable and the app behaves
+exactly as normal; a forced launch logs `forced state active` so it cannot be
+mistaken for real data.
 
 Rendering is static. The mascot is redrawn only when the severity band changes —
 there is no animation loop, and idle CPU stays at zero. If reactive animation is

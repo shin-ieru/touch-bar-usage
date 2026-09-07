@@ -64,7 +64,11 @@ Performed by direct observation on the target Mac, macOS 26.6.2.
 | 10 | Native volume/brightness/media coexist | **FAIL** — see below |
 
 | 11 | Clawd renders on the bar, in colour | **pass** |
-| 12 | Clawd pose follows usage severity | **pass** by construction; only `calm` observed live (real usage was 26% / 15%) |
+| 12 | Clawd `calm` pose at normal usage | **pass** — observed live at 26% / 15% |
+| 13 | Clawd `alert` pose at elevated usage | **pass** — observed live when 5h reached 75% |
+| 14 | Clawd `worried` pose at warning usage | **pass** — via `TBU_FORCE_SEVERITY=warning`; wide eyes, visibly distinct |
+| 15 | Clawd `panic` pose at critical usage | **pass** — via `TBU_FORCE_SEVERITY=critical`; shock lines visible |
+| 16 | Severity colours and glyphs on the bar | **pass** — `5h 97%!!` red, `W 90%!` orange |
 
 ### Check 10 — native controls are displaced
 
@@ -114,7 +118,7 @@ Stated plainly rather than assumed to pass:
 | Launch at Login registration from `/Applications` | not verified |
 | Expanding / collapsing Apple's Control Strip alongside the widget | **not applicable** — the modal bar claims the full strip, so there is no native Control Strip on screen to expand while the widget is shown |
 | Adjusting brightness / volume / mute with the widget shown | **not possible** — see check 10 |
-| Clawd `alert` / `worried` / `panic` poses on the physical bar | not observed live; real usage stayed in the `calm` band. Verified via `make preview` renders instead |
+| `worried` / `panic` poses reached by *real* quota | not observed — real usage never exceeded 75%. Verified on the bar via `TBU_FORCE_SEVERITY` instead, which pins percentages and pose together |
 
 ### How to run these
 
@@ -164,8 +168,9 @@ band.
 - A side-by-side comparison with Claude Code's interactive `/usage` has not been
   performed. Values come from the same OAuth endpoint Claude Code's own session
   uses and are parsed structurally, but the comparison itself remains unrun.
-- Clawd's non-`calm` poses have not been seen on the physical bar, only in
-  rendered previews, because live usage stayed below 60%.
+- Clawd's `worried` and `panic` poses were verified on the bar through a pinned
+  state rather than by real quota reaching 85% / 95%. The rendering path is
+  identical either way, but the thresholds themselves have not fired naturally.
 
 **Resolved since the first pass:** the mascot is now Clawd rather than the
 generic placeholder, fetched locally by `make assets` and rendered in his own
