@@ -17,6 +17,10 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 # report than a counter someone has to remember to bump.
 BUILD="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)"
 
+# Build first. `--show-bin-path` only reports where the product *would* be, so
+# without this the script silently depends on someone having built already —
+# which works in a warm checkout and fails on a fresh clone.
+swift build --package-path "$ROOT" -c "$CONFIGURATION"
 BIN="$(swift build --package-path "$ROOT" -c "$CONFIGURATION" --show-bin-path)"
 APP="$ROOT/dist/$APP_NAME.app"
 
