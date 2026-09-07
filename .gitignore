@@ -1,0 +1,28 @@
+# Build products
+.build/
+DerivedData/
+*.o
+*.dSYM/
+dist/
+TouchBarUsage.app/
+
+# Xcode / SwiftPM local state
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+Package.resolved
+
+# Local branded assets (see docs/branding.md) — never commit third-party artwork
+LocalAssets/
+
+# Development preview renders
+PreviewOutput/
+
+# Local secrets / captured fixtures from real accounts
+*.local
+.env
+Fixtures/local-*
+*-real-response.json
+
+# macOS
+.DS_Store
