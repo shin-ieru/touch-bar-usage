@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         observeStates()
         startRefreshTimer()
-        observeWake()
+        observeSleepAndWake()
         openUsageModeAtLaunchIfRequested()
 
         Task { [weak self] in
@@ -127,17 +127,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshTimer = timer
     }
 
-    private func observeWake() {
-        NSWorkspace.shared.notificationCenter.addObserver(
+    /// Sleep is the only non-user event that closes usage mode; see
+    /// `TouchBarController.handleSystemWillSleep`.
+    private func observeSleepAndWake() {
+        let center = NSWorkspace.shared.notificationCenter
+
+        center.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.touchBar?.handleSystemWillSleep() }
+        }
+
+        center.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshAll(trigger: .wake) }
+            Task { @MainActor in
+                guard let self else { return }
+                // Restores the resting state only. Usage mode is never reopened
+                // automatically — the user taps the badge if they want it back.
+                self.touchBar?.handleSystemDidWake()
+                self.refreshAll(trigger: .wake)
+            }
         }
     }
 
     /// Development affordance: open usage mode shortly after launch so the
     /// presentation path can be checked on the physical bar independently of the
-    /// menu that normally triggers it. Auto-dismiss still applies.
+    /// menu that normally triggers it. It stays open like any other usage mode.
     private func openUsageModeAtLaunchIfRequested() {
         guard ProcessInfo.processInfo.environment["TBU_OPEN_USAGE_AT_LAUNCH"] == "1" else { return }
         let timer = Timer(timeInterval: 3, repeats: false) { [weak self] _ in
