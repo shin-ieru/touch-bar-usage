@@ -158,19 +158,61 @@ configuration tested above. **That coexistence did not reproduce on macOS
 written; it is recorded here so the next person does not assume our
 implementation is simply wrong.
 
-## The tradeoff, stated plainly
+## The architecture this forced (Phase 2)
 
-**While the widget is presented, Apple's native volume, brightness, mute and
-media controls are not visible.** This is not the outcome the project wanted, and
-it is not hidden behind optimistic wording.
+The measurements above have a direct product consequence, and it is worth stating
+plainly because it changed the design:
 
-Mitigations actually available:
+> Touch Bar Usage does not attempt to permanently combine a wide custom AI
+> dashboard with all native Touch Bar controls. Instead it keeps macOS's normal
+> Touch Bar as the resting state and presents the full usage dashboard only on
+> demand.
 
-- the menu bar's **Touch Bar: On/Off** toggle tears the presentation down
-  immediately and returns the bar to normal, with no relaunch;
-- native controls are not *reimplemented* — drawing fake brightness and volume
-  buttons was explicitly rejected, because they would be a worse imitation of
-  controls the OS already owns.
+Phase 1 kept a widget presented over the whole strip all day. Since a system-modal
+bar is inherently full-width, that permanently displaced Apple's brightness,
+volume, mute and media controls — a real cost paid every minute for information
+glanced at occasionally.
+
+Phase 2 inverts it:
+
+| State | What owns the Touch Bar | Cost |
+| --- | --- | --- |
+| **Normal** (resting) | macOS — native controls, per-app bars | none |
+| **Usage mode** (on demand) | our dashboard, full width | temporary |
+
+Usage mode is entered from the menu bar, shows both providers, allows a detail
+page per provider, and leaves on Close or after ~12 seconds of inactivity. This
+is an intentional reliability choice grounded in the target-hardware testing
+above, not a limitation we stumbled into.
+
+Native controls are **not reimplemented**. Drawing fake brightness and volume
+buttons was explicitly rejected: they would be a worse imitation of controls the
+OS already owns, and they would be wrong the moment Apple changed anything.
+
+## The Control Strip entry point does not render
+
+The intended entry point was a small persistent Control Strip item — "AI" plus a
+severity glyph — so usage mode could be opened from the Touch Bar itself.
+
+**It does not render on macOS 26.6.2.** `addSystemTrayItem:` and
+`DFRElementSetControlStripPresenceForIdentifier` both succeed, the app logs a
+successful install, and nothing is drawn. This has now been tested across two
+phases with:
+
+- an Auto Layout-only view (collapses — a genuine bug, since fixed);
+- a concrete-frame view at 200 pt;
+- a concrete-frame view at **64 pt**, sized for the narrow slot;
+- both `fullControlStrip` and `app` presentation modes;
+- present-then-`minimizeSystemModalTouchBar:`, which collapses to nothing.
+
+The code path remains behind `TBU_TOUCHBAR_STRATEGY=controlStripItem` so it can
+be re-measured on a future release.
+
+**Consequence:** the menu bar is the entry point. That was always specified as
+the fallback, and it is now the primary route. To compensate for the lost
+at-a-glance signal, the menu bar icon itself reflects the worst severity across
+providers and appends `!` / `!!` — so a provider hitting its limit is visible
+without opening anything.
 
 ## Touch input
 

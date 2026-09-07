@@ -6,6 +6,22 @@ Open a GitHub issue for anything non-sensitive. For a credential-handling
 problem, please report it privately through GitHub's "Report a vulnerability"
 flow rather than in a public issue.
 
+## Codex: no OpenAI credential is ever held
+
+Codex usage is read through the **local Codex App Server** over stdio JSON-RPC.
+This app does not read `~/.codex/auth.json`, holds no OpenAI token, and contacts
+no OpenAI host. Only `initialize`, `initialized` and `account/rateLimits/read`
+are sent — never anything that spends rate-limit reset credits, sends mail, or
+touches authentication.
+
+| Guarantee | Enforced by |
+| --- | --- |
+| No OpenAI credential is read | no code path opens `auth.json`; `make audit` fails if one appears |
+| No OpenAI host is contacted | `URLSession` is confined to `AnthropicUsageClient`, asserted in tests |
+| Only read-only RPC methods are sent | `CodexAppServerClient.allowedMethods`, asserted in tests and audit |
+| Server error text cannot leak account details | messages are truncated to one 80-char line; stderr is drained but never logged |
+| No orphan child process | explicit shutdown on termination, verified on hardware |
+
 ## Threat model in one paragraph
 
 Touch Bar Usage reads one existing credential that another application (Claude

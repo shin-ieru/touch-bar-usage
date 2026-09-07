@@ -1,5 +1,21 @@
 # Security model
 
+## Two providers, two very different boundaries
+
+| | Claude | Codex |
+| --- | --- | --- |
+| Credential read by this app | access token from Keychain | **none** |
+| Network calls made by this app | one GET to `api.anthropic.com` | **none** |
+| Who talks to the vendor | this app | the local Codex App Server |
+
+Codex has the stronger boundary, and the reason is simply that a local broker
+exists: the Codex App Server already owns authentication, so this app asks it for
+numbers over a pipe and never handles an OpenAI credential at all. Anthropic
+exposes no equivalent, so the Claude provider must read a token — which is why
+the rest of this document is mostly about containing that.
+
+Where a local broker exists, using it is strictly safer, and this project uses it.
+
 ## What the app accesses
 
 - **Physical Touch Bar APIs** — private `NSTouchBar` / `DFRFoundation` entry points
@@ -10,6 +26,23 @@
   name `Claude Code-credentials`, created by Claude Code itself. Read-only.
 - **One Anthropic endpoint** — `https://api.anthropic.com/api/oauth/usage`.
 - **A local normalized cache** — `~/Library/Application Support/com.gabrielanyog.touchbarusage/`.
+- **The local Codex App Server** — launched as a child process, spoken to over
+  stdio JSON-RPC. Only `initialize`, `initialized` and `account/rateLimits/read`
+  are ever sent.
+- **An already-installed OpenAI application's icon file**, read from disk to draw
+  the Codex mark. Nothing is downloaded and nothing is committed.
+
+### What the app does not access, for Codex specifically
+
+- `~/.codex/auth.json` or any OpenAI token
+- `api.openai.com` or any OpenAI host
+- `account/rateLimitResetCredit/consume` — spends the user's reset credits
+- `account/sendAddCreditsNudgeEmail` — sends the user mail
+- `account/login` / `account/logout` — this app never touches authentication
+- threads, prompts, conversations, exec, or config methods
+
+`make audit` fails the build if a credential path, OpenAI endpoint, or
+non-read-only RPC method appears in tracked source.
 
 ## What the app does not access
 

@@ -135,6 +135,22 @@ public bug report.** Report presence and status ("found", "expired",
 "not installed"), never values. No tokens, no account identifiers, no raw
 payloads, no email addresses.
 
+## Two reference implementations
+
+Two providers now exist, and they take deliberately different approaches — worth
+reading both before adding a third:
+
+| | Claude | Codex |
+| --- | --- | --- |
+| Credential | access token read from Keychain | **none held** |
+| Transport | `URLSession` GET | stdio JSON-RPC to a local broker |
+| Failure surface | HTTP status | RPC error / child exit |
+
+**Prefer the Codex shape when the vendor ships a local broker.** Asking an
+already-authenticated local process for numbers is strictly safer than handling a
+credential yourself. Read a token only when there is no alternative, as with
+Claude.
+
 ## Adding a provider — checklist
 
 1. Create `Sources/TouchBarUsageKit/Providers/<Name>/`.

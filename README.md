@@ -1,69 +1,78 @@
 # Touch Bar Usage
 
-Claude Code usage, directly on your MacBook Pro Touch Bar.
+Claude Code and Codex usage, one tap away on your MacBook Pro Touch Bar.
 
-Touch Bar Usage is a lightweight native macOS utility that keeps your Claude
-usage limits visible while you work, without opening `/usage` every time.
+Touch Bar Usage is a lightweight native macOS utility that keeps your AI coding
+quota a click away. **Your Touch Bar stays normal** — brightness, volume, media
+and per-app controls all behave exactly as they always have. Open the usage
+dashboard when you want it, and it gets out of the way again.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ [mark] Claude  5h 72%  W 43%                [system controls]│
-└──────────────────────────────────────────────────────────────┘
+Normal (resting)   ── macOS owns the Touch Bar, nothing displaced ──
+
+Usage mode         ┌──────────────────────────────────────────────────────┐
+(on demand)        │ [Clawd] Claude 5h72 W43   [◍] Codex 5h84 W51  [Close]│
+                   └──────────────────────────────────────────────────────┘
 ```
 
-It stays visible while you switch between Terminal, VS Code, Xcode, Safari or
-anything else.
+Tap a provider for its detail page; close it, or leave it ~12 seconds, and macOS
+gets its Touch Bar straight back.
 
-> **⚠️ Tradeoff you should know before installing.** On macOS 26 the only way to
-> keep a third-party widget on the Touch Bar is a system-modal bar that claims the
-> whole strip, so **Apple's native volume, brightness and media controls are
-> hidden while the widget is shown.**
->
-> Coexisting with them was the intended design and was pursued hard: the Control
-> Strip tray item, present-then-minimise, and both `placement` values were each
-> tested on real hardware, in both Touch Bar presentation modes. None of them
-> shows the widget while keeping the native controls. The full matrix is in
-> [`docs/touchbar-research.md`](docs/touchbar-research.md).
->
-> The menu bar's **Touch Bar: On/Off** toggle restores the native bar instantly,
-> with no relaunch. The app does **not** draw fake brightness or volume buttons —
-> imitating controls the OS already owns would be worse than yielding the bar.
+> **Why on demand?** On macOS 26 a third-party Touch Bar surface is inherently
+> full-width, and third-party Control Strip items are not rendered at all. Keeping
+> a dashboard permanently visible therefore means permanently displacing Apple's
+> controls — a real cost paid all day for information glanced at occasionally.
+> So the dashboard is deliberately temporary. The measurements behind that
+> decision are in [`docs/touchbar-research.md`](docs/touchbar-research.md).
 
 ## Project status
 
-**Phase 1 — early development.** Claude Code support only. Codex is not
-implemented; see the roadmap.
+**Phase 2 — early development.** Claude Code and OpenAI Codex are both supported.
 
-The Touch Bar bridge, the Claude provider, the caching and refresh layer, and the
-test suite are complete and working against live data. The widget has been
-verified on physical hardware: it displays, persists across application
-switching, expands on tap, and tears down cleanly.
+Verified on physical Touch Bar hardware: the native bar is preserved, the
+dashboard opens and closes cleanly, both providers render with their own icons,
+detail pages work, and auto-dismiss restores the native bar.
 
 Known limitations are recorded honestly in
-[`docs/manual-test-results.md`](docs/manual-test-results.md) — in particular the
-displaced native controls above, and the fact that the shipped mascot is an
-original placeholder rather than Claude's character.
+[`docs/manual-test-results.md`](docs/manual-test-results.md) — in particular that
+the Touch Bar entry point had to move to the menu bar.
+
+## How you use it
+
+1. The app lives in the **menu bar** (a small gauge icon, next to the clock). Its
+   icon shows the worst severity across both providers, so a provider hitting its
+   limit is visible without opening anything.
+2. Choose **Show Usage on Touch Bar** (or press ⌘U with the menu open).
+3. The dashboard appears on the Touch Bar. Tap **Claude** or **Codex** for detail.
+4. **Close**, or wait ~12 seconds — macOS gets its Touch Bar back.
+
+The menu itself also lists both providers' figures, so you never *have* to use the
+Touch Bar at all.
 
 ## What it displays
 
-**Compact** (Control Strip, always visible):
+**Dashboard** (usage mode):
 
 ```
-[mark] Claude  5h 72%  W 43%
+[Clawd] Claude  5h 72%  W 43%     [◍] Codex  5h 84%  W 51%     [Close]
 ```
 
-Percentages are **quota used**, not remaining. Under width pressure the widget
-drops the "Claude" prefix before it will ever truncate a number.
+Percentages are **quota used**, not remaining — for both providers. Under width
+pressure a chip drops its provider name before it will ever truncate a number.
 
-**Detail** (tap the widget):
+**Detail** (tap a provider):
 
 ```
-Claude   5h  72% used  resets in 2h 13m   Week  43% used  resets Wed 11:25 AM
-         Updated just now                                            [ Done ]
+‹ Back   [Clawd] Claude   5h  72% used  resets in 2h 13m
+                          Week 43% used  resets Wed 11:25 AM
+         Updated just now                                   [ Close ]
 ```
 
 Per-model weekly caps, when Anthropic returns them, appear here rather than
-cluttering the compact bar.
+cluttering the dashboard.
+
+If a provider doesn't report a 5-hour window, it says so — `5h — not reported` —
+rather than showing a fabricated `0%`.
 
 **Severity** is shown by glyph *and* colour, never colour alone:
 
@@ -79,13 +88,18 @@ cluttering the compact bar.
 
 ## Requirements
 
-- **A MacBook Pro with a physical Touch Bar.** Without one the app still runs, but
-  only the menu-bar half is useful.
+- **A MacBook Pro with a physical Touch Bar** for the dashboard. Without one the
+  app still runs and the menu bar shows everything.
 - macOS 13 or later. Developed and verified on **macOS 26.6.2** (arm64,
   `Mac14,7`).
 - Xcode 26 / Swift 6.3 to build.
-- **Claude Code installed and signed in.** This app reads the credential Claude
-  Code already stores; it never asks you for a token.
+- **Claude Code installed and signed in**, for Claude usage. This app reads the
+  credential Claude Code already stores; it never asks you for a token.
+- **Codex installed and signed in**, for Codex usage. This app never sees an
+  OpenAI token at all — see below.
+
+Either provider works without the other. If Codex isn't installed, Claude carries
+on and Codex simply reports "not found".
 
 ## Build from source
 
@@ -94,7 +108,7 @@ git clone <this-repo>
 cd touch-bar-usage
 
 make assets  # fetch Clawd pose data onto your machine (optional but recommended)
-make test    # 94 unit tests — no network, keychain, or Touch Bar needed
+make test    # 149 unit tests — no network, keychain, Codex or Touch Bar needed
 make run     # builds dist/Touch Bar Usage.app and launches it
 ```
 
@@ -157,6 +171,31 @@ re-authenticate in Claude Code. It will not do that for you, by design.
 
 Full detail: [`SECURITY.md`](SECURITY.md) and
 [`docs/security-model.md`](docs/security-model.md).
+
+## How Codex usage is obtained
+
+Through the **local Codex App Server** — no OpenAI credential ever reaches this
+app:
+
+```
+Touch Bar Usage  ──local stdio JSON-RPC──▶  Codex App Server  ──▶  OpenAI
+```
+
+The app launches `codex app-server`, completes the standard handshake, and calls
+`account/rateLimits/read`. That's it. Specifically it does **not**:
+
+- read `~/.codex/auth.json` or any OpenAI token;
+- contact `api.openai.com` or any OpenAI host;
+- call anything that spends your rate-limit reset credits or emails you;
+- start threads, send prompts, or read conversations.
+
+The App Server — which you already installed and logged into — owns
+authentication and makes the network call itself. `make audit` fails the build if
+a credential path or OpenAI endpoint ever appears in the source.
+
+Message shapes come from the app server's own generated schema
+(`codex app-server generate-json-schema`), not guesswork. Details:
+[`docs/codex-integration.md`](docs/codex-integration.md).
 
 ## Privacy
 
@@ -255,13 +294,17 @@ the process, so cleanup runs. If one is stranded, log out and back in.
 ## Roadmap
 
 ```
-Phase 1  —  Claude Code            ← you are here
-Phase 2  —  OpenAI Codex
-Later    —  additional usage providers if useful
+Phase 1  —  Claude Code            ✓ done
+Phase 2  —  OpenAI Codex           ← you are here
+Later    —  release hardening (signing, notarization, Homebrew Cask)
+            additional usage providers if useful
 ```
 
-Codex support does **not** exist yet. The provider abstraction was built to accept
-it; see [`docs/codex-handoff.md`](docs/codex-handoff.md) and
+Distribution is via GitHub releases and (later) a Homebrew Cask. **Not the Mac App
+Store** — the Touch Bar presentation depends on private APIs, which disqualifies
+it.
+
+Adding a third provider should not require touching either existing one; see
 [`docs/provider-contract.md`](docs/provider-contract.md).
 
 ## Contributing

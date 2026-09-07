@@ -1,4 +1,44 @@
-# Codex handoff (Phase 2)
+# Codex handoff (Phase 2) — **completed**
+
+> **Status: done.** Codex support shipped in Phase 2. This document is kept as
+> the record of what the handoff asked for and how it was answered; the live
+> reference is [`codex-integration.md`](codex-integration.md), and
+> [`provider-contract.md`](provider-contract.md) remains the spec for adding a
+> *third* provider.
+>
+> What was actually built:
+>
+> - `Providers/Codex/` — executable resolver, stdio JSON-RPC transport, App
+>   Server client, parser, provider.
+> - **No OpenAI credential is read.** The local Codex App Server owns
+>   authentication; this app only speaks JSON-RPC to it over a pipe. That is a
+>   narrower boundary than the Claude provider's and was chosen deliberately.
+> - The Touch Bar model was **replaced**, not extended: two providers did not fit
+>   the Phase 1 always-visible widget, and that widget permanently displaced
+>   Apple's controls. See "Revised Touch Bar architecture" below.
+>
+> The prediction below that `ClaudeCompactView` / `ClaudeDetailView` should be
+> renamed and reused turned out to be right in spirit but wrong in detail: they
+> were replaced by `UsageDashboardView` and `ProviderDetailView`, which render a
+> list of providers rather than one.
+
+## Revised Touch Bar architecture
+
+Phase 1 kept a widget presented over the whole strip all day. Because a
+system-modal bar is inherently full-width on macOS 26, that permanently hid
+brightness, volume and media. Phase 2 inverts it:
+
+- **Normal mode** — macOS owns the Touch Bar. This is the resting state.
+- **Usage mode** — the dashboard is presented on demand, and dismissed by Close
+  or after ~12s of inactivity.
+
+The intended Touch Bar entry point (a small Control Strip item) **does not render
+on macOS 26.6.2** despite registering successfully; the menu bar is the entry
+point instead. Full measurements in [`touchbar-research.md`](touchbar-research.md).
+
+---
+
+*Original Phase 1 handoff follows.*
 
 Written for the agent adding OpenAI Codex support. Phase 1 implements Claude
 only; the provider layer was built to accept a second provider without touching

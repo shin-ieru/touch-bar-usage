@@ -46,7 +46,71 @@ structurally — no screen scraping, no OCR.
 > `/usage` output at the same moment has **not** been performed. Run `/usage` in
 > Claude Code and compare against the menu-bar figures to close this out.
 
-## Physical Touch Bar checks
+## Phase 2 — revised architecture (macOS 26.6.2)
+
+The Touch Bar model changed in Phase 2: macOS keeps its own Touch Bar as the
+resting state, and the usage dashboard is presented on demand. These are the
+checks for that architecture, performed by direct observation on the target Mac.
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | Native Touch Bar behaviour preserved at rest | **pass** |
+| 2 | Brightness and volume work normally | **pass** |
+| 3 | Native bar survives switching Finder/Safari/Terminal/Xcode | **pass** |
+| 4 | Small Control Strip tray entry point | **FAIL** — not rendered; see below |
+| 5 | Usage mode opens from the menu bar | **pass** |
+| 6 | Both providers visible and fit, nothing clipped | **pass** |
+| 7 | Clawd renders on the Claude chip | **pass** |
+| 8 | Codex mark renders on the Codex chip | **pass** (after the template fix below) |
+| 9 | Tapping a provider opens its detail page | **pass** |
+| 10 | Detail page shows that provider's own numbers | **pass** — Codex detail verified |
+| 11 | Back returns to the dashboard | **pass** |
+| 12 | Close restores the native Touch Bar immediately | **pass** |
+| 13 | Auto-dismiss (~12s) restores the native bar | **pass** |
+| 14 | Quit tears down cleanly | **pass** — `touch bar presentation torn down` / `terminated cleanly` |
+| 15 | No orphaned Codex child process | **pass** — `codex app-server` count 1 → 0 → 1 across quit/relaunch |
+| 16 | Relaunch leaves no duplicate | **pass** |
+| 17 | Idle CPU | **pass** — 0.0% |
+
+### Check 4 — the Control Strip entry point does not render
+
+The intended design was a small persistent "AI" item on the Touch Bar itself.
+`addSystemTrayItem:` and `DFRElementSetControlStripPresenceForIdentifier` both
+succeed and the app logs a successful install, but **nothing is drawn**.
+
+Across Phase 1 and Phase 2 this was tested with an Auto Layout-only view (a
+genuine bug, fixed), a concrete-frame view at 200 pt, a concrete-frame view at
+**64 pt** sized for the narrow slot, in both `fullControlStrip` and `app`
+presentation modes, and via present-then-minimise. None renders.
+
+**Consequence:** the menu bar is the entry point — always specified as the
+fallback, now the primary route. To compensate, the menu bar icon reflects the
+worst severity across providers and appends `!` / `!!`, so a provider hitting its
+limit is visible without opening anything.
+
+### Defects found only on hardware
+
+- The Codex mark first rendered as a **solid black square**: the bundled
+  `blossom.dark.png` is an opaque tile, and templating it paints the whole
+  rectangle. Fixed by preferring the transparent SVG glyphs and only templating
+  vector sources.
+- The menu item did nothing when clicked: `rebuild()` ran from `menuWillOpen` and
+  called `removeAllItems()`, destroying the items macOS was displaying, so clicks
+  landed on items that no longer existed. Fixed by mutating titles in place on
+  open and rebuilding only after close. This also explains the identical Phase 1
+  symptom with the pose-preview item.
+
+### Not verified in Phase 2
+
+| Check | Status |
+| --- | --- |
+| Codex signed-out / not-installed states on hardware | not verified live — Codex stayed signed in throughout. Covered by tests and by `TBU_FORCE_CODEX` renders |
+| App server crash-and-recover on hardware | not verified live; covered by transport tests |
+| Wake-from-sleep refresh | not verified |
+| Launch at Login from `/Applications` | not verified |
+| Live comparison against Codex's own usage UI | not performed |
+
+## Phase 1 — physical Touch Bar checks
 
 Performed by direct observation on the target Mac, macOS 26.6.2.
 
