@@ -11,9 +11,16 @@ usage limits visible while you work, without opening `/usage` every time.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-It sits in the Control Strip **alongside** the native volume, brightness and
-media controls rather than taking over the bar, and it stays there while you
-switch between Terminal, VS Code, Xcode, Safari or anything else.
+It stays visible while you switch between Terminal, VS Code, Xcode, Safari or
+anything else.
+
+> **⚠️ Tradeoff you should know before installing.** On macOS 26 the only way to
+> keep a third-party widget on the Touch Bar is a system-modal bar that claims the
+> whole strip, so **the native volume, brightness and media controls are hidden
+> while the widget is shown.** Coexisting with them was the intended design, but
+> third-party Control Strip items are no longer rendered on this OS version —
+> the measurements are in [`docs/touchbar-research.md`](docs/touchbar-research.md).
+> The menu bar's **Touch Bar: On/Off** toggle restores the native bar instantly.
 
 ## Project status
 
@@ -21,10 +28,14 @@ switch between Terminal, VS Code, Xcode, Safari or anything else.
 implemented; see the roadmap.
 
 The Touch Bar bridge, the Claude provider, the caching and refresh layer, and the
-test suite are complete and working against live data. A set of physical
-Touch Bar interaction checks is still outstanding — see
-[`docs/manual-test-results.md`](docs/manual-test-results.md), which is explicit
-about what has and has not been confirmed.
+test suite are complete and working against live data. The widget has been
+verified on physical hardware: it displays, persists across application
+switching, expands on tap, and tears down cleanly.
+
+Known limitations are recorded honestly in
+[`docs/manual-test-results.md`](docs/manual-test-results.md) — in particular the
+displaced native controls above, and the fact that the shipped mascot is an
+original placeholder rather than Claude's character.
 
 ## What it displays
 
@@ -178,6 +189,14 @@ make run
 `System modal bridge: unsupported`, the private APIs this depends on are not
 available on your macOS version. If `Touch Bar hardware: not detected`, your Mac
 has no physical Touch Bar.
+
+**I want my native controls back.** Use **Touch Bar: Off** in the menu. It tears
+the presentation down immediately; switch it back on when you want the widget.
+
+**Can I have both at once?** Not on macOS 26 — see the warning at the top. If a
+future macOS restores third-party Control Strip items, set
+`TBU_TOUCHBAR_STRATEGY=controlStripItem` to re-test the coexistence path, which
+is still in the code.
 
 **Shows `sign in`.** Your Claude Code token is expired or missing. Run `claude` and
 sign in; the widget picks it up on the next refresh (or use **Refresh Now**).

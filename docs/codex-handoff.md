@@ -152,18 +152,37 @@ credential, network access, a physical Touch Bar, or either CLI installed.
 
 ## Known private Touch Bar limitations
 
-Read [`touchbar-research.md`](touchbar-research.md) in full. The parts that will
-bite you:
+Read [`touchbar-research.md`](touchbar-research.md) in full — it records device
+measurements, not assumptions. The parts that will bite you:
 
+- **Third-party Control Strip items are not rendered on macOS 26.6.2.**
+  Registration succeeds and logs success; nothing is drawn. The shipped widget is
+  a persistent system-modal bar that claims the whole strip, hiding the native
+  controls. Do not "fix" this by trusting the API return values — check the
+  physical bar.
+- **`placement` is binary**: `0` keeps native controls but shows nothing, `1`
+  shows the widget and claims the bar. There is no middle setting.
+- **A custom `NSView` in a Touch Bar item receives no touch events** — neither
+  gesture recognisers nor `mouseDown`. Use `NSButton` with a target/action. The
+  compact view is a button for exactly this reason.
+- **Off-device PNG previews do not validate Touch Bar rendering.** An image built
+  with `lockFocus` + `.clear` compositing previewed correctly and did not display
+  on the bar; `NSImage(size:flipped:drawingHandler:)` with an even-odd fill did.
 - Only the `…SystemModalTouchBar…` selector spelling exists on macOS 26; the
   older `…FunctionBar…` spelling does not. Probing the wrong one silently reports
   "unsupported".
 - `DFRGetKeyboardIsPresent` does not resolve; hardware detection uses
   `TouchBarServer` presence instead.
-- Control Strip width is finite and is the binding constraint on two providers.
-- Cleanup must stay idempotent, or a rebuild-and-relaunch cycle leaves duplicate
-  tray items.
+- Cleanup must stay idempotent, or a rebuild-and-relaunch cycle leaves a stale
+  presentation.
 - Private API use rules out the Mac App Store and rules out sandboxing.
+
+### What this means for two providers
+
+Bar width is the binding constraint, and you have the **whole** strip to work
+with rather than a Control Strip slot — which makes fitting two providers easier
+than it would otherwise be. Budget roughly 300 pt per provider at full text and
+fall back to `condensedText` beyond that.
 
 ## Asset strategy
 

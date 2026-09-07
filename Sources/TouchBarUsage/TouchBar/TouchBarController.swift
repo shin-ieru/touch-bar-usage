@@ -72,6 +72,9 @@ final class TouchBarController: NSObject {
         bridge.dismissModal()
         detailBar = nil
         detailView = nil
+        // Under the persistent-modal strategy the compact widget *is* a modal
+        // bar, so dismissing the detail bar would otherwise leave nothing.
+        bridge.restoreCompactPresentation()
     }
 
     private func refreshDetail() {

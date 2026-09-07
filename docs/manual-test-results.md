@@ -27,7 +27,8 @@ These were confirmed from process state, unified logs, and the on-disk cache.
 | Unknown response bucket tolerated | **pass** | Live response contained an unrecognised bucket; parsed to `.other`, no crash |
 | Cache contains no credential material | **pass** | Cache file inspected: only percentages, reset times, labels |
 | Idle CPU | **pass** | `0.0%` CPU |
-| Memory footprint | **pass** | ~10 MB RSS |
+| Memory footprint | **pass** | ~10–12 MB RSS |
+| Clean teardown on SIGTERM | **pass** | Log: `control strip item removed`, `terminated cleanly` |
 | Unit suite | **pass** | 82 tests, 0 failures |
 | Secret/hygiene audit | **pass** | `make audit` |
 
@@ -45,45 +46,60 @@ structurally — no screen scraping, no OCR.
 > `/usage` output at the same moment has **not** been performed. Run `/usage` in
 > Claude Code and compare against the menu-bar figures to close this out.
 
-## Outstanding — requires a human at the machine
+## Physical Touch Bar checks
 
-These are the checks in section 25 of the Phase 1 brief that need someone looking
-at the physical bar. **None of them has been confirmed.** The app is running and
-its Control Strip item is installed, so they can be walked through directly.
+Performed by direct observation on the target Mac, macOS 26.6.2.
 
-| # | Check | Status |
+| # | Check | Result |
 | --- | --- | --- |
-| 1 | Widget visible in Control Strip after launch | not verified |
-| 2 | Persists while Finder is foreground | not verified |
-| 3 | Persists while Safari is foreground | not verified |
-| 4 | Persists while Terminal is foreground | not verified |
-| 5 | Persists while VS Code is foreground | not verified |
-| 6 | Persists while Xcode is foreground | not verified |
-| 7 | Survives rapid app switching without flicker | not verified |
-| 8 | Native Control Strip expands correctly alongside it | not verified |
-| 9 | Control Strip collapses correctly | not verified |
-| 10 | Tapping the widget opens the detail bar | not verified |
-| 11 | "Done" returns to compact mode | not verified |
-| 12 | Manual refresh from the menu updates values | not verified |
-| 13 | Quitting removes the widget cleanly | not verified |
-| 14 | Relaunch produces no duplicate tray item | not verified |
-| 15 | Text fits at the rendered width on the real bar | not verified |
-| 16 | System volume/brightness/media controls still work | not verified |
+| 1 | Widget visible after launch | **pass** (persistent modal strategy) |
+| 2 | Persists across application switching | **pass** — confirmed while switching between apps |
+| 3 | Tapping the widget opens the detail bar | **pass** |
+| 4 | "Done" returns to compact mode | **pass** |
+| 5 | Text fits at the rendered width on the real bar | **pass** |
+| 6 | Mascot mark renders on the bar | **pass** (after the template-image fix) |
+| 7 | Quitting removes the presentation cleanly | **pass** — logged `control strip item removed` / `terminated cleanly` |
+| 8 | Relaunch produces no duplicate presentation | **pass** — repeated across ~10 rebuild/relaunch cycles |
+| 9 | No flicker loop, no runaway CPU | **pass** — 0.0% CPU idle |
+| 10 | Native volume/brightness/media coexist | **FAIL** — see below |
+
+### Check 10 — native controls are displaced
+
+This is a genuine failure against section 7's preference, not a partial pass.
+
+Three strategies were implemented and tested on the physical bar:
+
+| Strategy | Displayed? | Native controls kept? |
+| --- | --- | --- |
+| Control Strip tray item | no | — |
+| Present modal then minimise | no | — |
+| Persistent modal, placement `0` | no | yes |
+| Persistent modal, placement `1` | **yes** | **no** |
+
+There is no configuration on macOS 26.6.2 that shows the widget *and* keeps the
+native controls. Third-party Control Strip items register successfully but are
+never drawn, in either Touch Bar presentation mode. Full measurements are in
+[`touchbar-research.md`](touchbar-research.md).
+
+The shipped behaviour is the only one that displays. The menu bar's
+**Touch Bar: On/Off** toggle restores the native bar instantly when needed.
+
+### Not yet exercised
+
+| Check | Status |
+| --- | --- |
+| Behaviour while Xcode specifically is foreground | not separately verified |
+| Manual refresh from the menu updating on-bar values | not verified |
+| Wake-from-sleep refresh | not verified |
+| Launch at Login registration from `/Applications` | not verified |
 
 ### How to run these
 
 ```bash
-make run                      # launches dist/Touch Bar Usage.app
+make run     # launches dist/Touch Bar Usage.app
 ```
 
-Then work through the table above. To finish:
-
-```bash
-# Quit from the menu bar item, then confirm the widget is gone and relaunch:
-make run
-```
-
-Record results here, replacing "not verified" with what actually happened.
+Quit from the menu bar item (not `kill`) so cleanup runs.
 
 ## Off-device UI verification
 
@@ -102,4 +118,19 @@ A text-clipping defect was found this way (the weekly percentage was truncated t
 `W`) and fixed before any device testing — which is the point of the preview path.
 
 These renders confirm layout and content only. They are **not** a substitute for
-seeing the widget on the physical bar.
+seeing the widget on the physical bar — two defects found during device testing
+were invisible to the preview path:
+
+- a custom `NSView` in a Touch Bar item receives no touch events at all, so the
+  widget rendered correctly but was inert until it became an `NSButton`;
+- an `NSImage` built with `lockFocus` and `.clear` compositing rendered fine
+  off-device but did not display as a template image on the bar.
+
+## Known open items
+
+- The shipped mascot is the project's original placeholder, not Claude's actual
+  character. This is deliberate — see [`branding.md`](branding.md) — but it is
+  not what a user expects to see, and remains open.
+- Native Touch Bar controls are displaced while the widget is shown (check 10).
+- A side-by-side comparison with Claude Code's interactive `/usage` has not been
+  performed.

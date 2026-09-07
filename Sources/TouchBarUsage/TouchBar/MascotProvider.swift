@@ -54,35 +54,43 @@ enum MascotProvider {
         return output
     }
 
-    /// Original placeholder: a rounded square with a simple two-dot face. It is
-    /// deliberately generic so it cannot be mistaken for, or impersonate, any
-    /// trademarked character.
+    /// Original placeholder: a rounded square with a simple two-dot face and a
+    /// mouth. Deliberately generic so it cannot be mistaken for, or impersonate,
+    /// any trademarked character.
+    ///
+    /// Drawn with `NSImage(size:flipped:drawingHandler:)` and an even-odd fill
+    /// rather than `lockFocus` plus `.clear` compositing: the latter produced an
+    /// image that rendered correctly off-device but did not display as a template
+    /// image on the physical Touch Bar.
     private static func fallbackMark(height: CGFloat) -> NSImage {
         let size = NSSize(width: height, height: height)
-        let image = NSImage(size: size)
-        image.lockFocus()
+        let image = NSImage(size: size, flipped: false) { _ in
+            let inset = height * 0.06
+            let body = NSRect(x: inset, y: inset,
+                              width: height - inset * 2, height: height - inset * 2)
 
-        let inset = height * 0.08
-        let body = NSRect(x: inset, y: inset, width: height - inset * 2, height: height - inset * 2)
-        let path = NSBezierPath(roundedRect: body, xRadius: height * 0.3, yRadius: height * 0.3)
-        NSColor.labelColor.setFill()
-        path.fill()
+            let path = NSBezierPath(roundedRect: body,
+                                    xRadius: height * 0.3, yRadius: height * 0.3)
 
-        // Eyes punched out, so the mark reads on both light and dark bars.
-        let eyeSize = height * 0.16
-        let eyeY = body.midY + height * 0.06
-        NSColor.clear.set()
-        NSGraphicsContext.current?.compositingOperation = .clear
-        for x in [body.midX - height * 0.17, body.midX + height * 0.17 - eyeSize] {
-            NSBezierPath(ovalIn: NSRect(x: x, y: eyeY, width: eyeSize, height: eyeSize)).fill()
+            // Face features are subpaths; even-odd winding punches them out of
+            // the body in a single fill, which keeps the alpha mask clean.
+            let eyeSize = height * 0.17
+            let eyeY = body.midY + height * 0.05
+            for x in [body.midX - height * 0.20, body.midX + height * 0.20 - eyeSize] {
+                path.appendOval(in: NSRect(x: x, y: eyeY, width: eyeSize, height: eyeSize))
+            }
+            path.append(NSBezierPath(
+                roundedRect: NSRect(x: body.midX - height * 0.15,
+                                    y: body.midY - height * 0.20,
+                                    width: height * 0.30, height: height * 0.08),
+                xRadius: height * 0.04, yRadius: height * 0.04))
+
+            path.windingRule = .evenOdd
+            NSColor.black.setFill()   // colour is ignored once isTemplate is set
+            path.fill()
+            return true
         }
-        // A small mouth line.
-        let mouth = NSRect(x: body.midX - height * 0.14, y: body.midY - height * 0.19,
-                           width: height * 0.28, height: height * 0.07)
-        NSBezierPath(roundedRect: mouth, xRadius: height * 0.035, yRadius: height * 0.035).fill()
-
-        image.unlockFocus()
-        image.isTemplate = true   // tints correctly against the Touch Bar
+        image.isTemplate = true   // tints to match the bar it is drawn on
         return image
     }
 }
