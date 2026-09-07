@@ -80,6 +80,29 @@ else
   echo "  ok: mascot resolves from disk only"
 fi
 
+echo "==> Checking Codex credentials are never read directly"
+# The App Server owns OpenAI authentication; this app must never touch the
+# credential file or hold an OpenAI token.
+# Comment lines are excluded: the docs deliberately state that this app does
+# *not* read auth.json, and that promise must not trip its own check.
+if files | grep -E '^Sources/' \
+   | xargs grep -nE 'auth\.json|OPENAI_API_KEY|sk-proj-|api\.openai\.com' 2>/dev/null \
+   | grep -vE ':[0-9]+:[[:space:]]*(///|//|\*)'; then
+  echo "FAIL: Codex credentials must be left to the App Server"; status=1
+else
+  echo "  ok: no direct Codex credential or OpenAI endpoint access"
+fi
+
+echo "==> Checking only read-only Codex RPC methods are sent"
+# These spend the user's credits or email them; a monitor must never call them.
+if files | grep -E '^Sources/' \
+   | xargs grep -nE '"account/(rateLimitResetCredit/consume|sendAddCreditsNudgeEmail|logout|login)' 2>/dev/null \
+   | grep -v 'must never'; then
+  echo "FAIL: a non-read-only Codex method is referenced"; status=1
+else
+  echo "  ok: Codex usage is read-only"
+fi
+
 echo "==> Checking Anthropic is the only network destination"
 offenders="$(files | grep -E '^Sources/.*\.swift$' | xargs grep -lE 'URLSession' 2>/dev/null \
   | grep -v 'AnthropicUsageClient.swift' || true)"

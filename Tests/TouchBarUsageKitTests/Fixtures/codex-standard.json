@@ -1,0 +1,17 @@
+{
+  "rateLimits": {
+    "limitId": "codex",
+    "primary":   { "usedPercent": 84, "windowDurationMins": 300,   "resetsAt": 1788756035 },
+    "secondary": { "usedPercent": 51, "windowDurationMins": 10080, "resetsAt": 1789310881 },
+    "planType": "plus"
+  },
+  "rateLimitsByLimitId": {
+    "codex": {
+      "limitId": "codex",
+      "primary":   { "usedPercent": 84, "windowDurationMins": 300,   "resetsAt": 1788756035 },
+      "secondary": { "usedPercent": 51, "windowDurationMins": 10080, "resetsAt": 1789310881 },
+      "planType": "plus"
+    }
+  },
+  "accountId": "acct_placeholder"
+}
