@@ -108,6 +108,43 @@ public struct ClawdPoseSet: Equatable, Sendable {
         public var columns: Int { maxColumn - minColumn + 1 }
     }
 
+    /// The face region only: the rows from the top of the creature down to just
+    /// below its eyes, and the columns spanned by that band.
+    ///
+    /// The Touch Bar tray slot is tiny, and the full creature — body, legs and
+    /// all — collapses into an unreadable smudge there. The face is the
+    /// recognisable part, so the compact badge crops to it. Derived from where the
+    /// eye cells actually are rather than from hard-coded row numbers, so it
+    /// survives a pose whose body sits higher or lower.
+    ///
+    /// Returns nil when the grid has no eyes to anchor on; callers fall back to
+    /// the full bounding box.
+    public static func headBoundingBox(of grid: [[Int]], padding: Int = 1) -> BoundingBox? {
+        guard let full = boundingBox(of: grid) else { return nil }
+
+        let eyeRows = grid.indices.filter { row in
+            grid[row].contains { $0 == Cell.eye.rawValue }
+        }
+        guard let lastEyeRow = eyeRows.max() else { return nil }
+
+        let maxRow = min(lastEyeRow + padding, full.maxRow)
+        guard maxRow >= full.minRow else { return nil }
+
+        // Width is taken from the creature's **top row** only. Rows at eye level
+        // and below also contain the arms, which stick out further; measuring
+        // across them produces a stepped anvil silhouette rather than a face.
+        // Cropping to the head's own width trims the arms off cleanly.
+        var minColumn = Int.max, maxColumn = Int.min
+        for (column, value) in grid[full.minRow].enumerated() where value != Cell.empty.rawValue {
+            minColumn = min(minColumn, column)
+            maxColumn = max(maxColumn, column)
+        }
+        guard minColumn <= maxColumn else { return nil }
+
+        return BoundingBox(minRow: full.minRow, maxRow: maxRow,
+                           minColumn: minColumn, maxColumn: maxColumn)
+    }
+
     /// Trims the empty border so the creature fills the space it is given.
     /// Returns nil for a wholly empty grid.
     public static func boundingBox(of grid: [[Int]]) -> BoundingBox? {

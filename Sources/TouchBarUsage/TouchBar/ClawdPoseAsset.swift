@@ -69,22 +69,55 @@ enum ClawdPoseAsset {
     /// Without colours the image becomes a tinted template instead, which still
     /// reads correctly on any bar.
     static func image(for severity: UsageSeverity, height: CGFloat) -> NSImage? {
-        guard let set = poseSet,
-              let grid = set.grid(for: severity),
-              let box = ClawdPoseSet.boundingBox(of: grid)
-        else { return nil }
+        render(severity: severity, height: height, crop: .fullBody)
+    }
 
-        // Cell size comes from a fixed reference height, not this pose's own row
-        // count. Poses differ in extent — `panic` adds shock lines above the body
-        // — and sizing per-pose would make the creature grow and shrink as usage
-        // crosses a severity band.
-        let cellSize = max((height / CGFloat(referenceRows)).rounded(.down), 1)
+    /// Just the face, scaled to fill `height`.
+    ///
+    /// For the Touch Bar tray slot, where the whole creature would be a few
+    /// pixels tall and unreadable. The crop is scaled to the requested height in
+    /// its own right rather than sharing the full-body reference scale.
+    /// Always monochrome: the face is composed into the tray badge, which is a
+    /// template image. Drawing the eyes in their own near-black colour would make
+    /// them opaque pixels that flatten into the silhouette, turning the face into
+    /// a featureless blob. Punching them out as transparency keeps them readable
+    /// at any tint.
+    static func headImage(height: CGFloat) -> NSImage? {
+        render(severity: .normal, height: height, crop: .head, monochrome: true)
+    }
+
+    private enum Crop { case fullBody, head }
+
+    private static func render(severity: UsageSeverity,
+                               height: CGFloat,
+                               crop: Crop,
+                               monochrome: Bool = false) -> NSImage? {
+        guard let set = poseSet, let grid = set.grid(for: severity) else { return nil }
+
+        let box: ClawdPoseSet.BoundingBox?
+        let cellSize: CGFloat
+        switch crop {
+        case .fullBody:
+            box = ClawdPoseSet.boundingBox(of: grid)
+            // Cell size comes from a fixed reference height, not this pose's own
+            // row count. Poses differ in extent — `panic` adds shock lines above
+            // the body — and sizing per-pose would make the creature grow and
+            // shrink as usage crosses a severity band.
+            cellSize = max((height / CGFloat(referenceRows)).rounded(.down), 1)
+        case .head:
+            // Fall back to the whole creature if the pose has no eyes to anchor on.
+            box = ClawdPoseSet.headBoundingBox(of: grid) ?? ClawdPoseSet.boundingBox(of: grid)
+            cellSize = max((height / CGFloat(box?.rows ?? 1)).rounded(.down), 1)
+        }
+        guard let box else { return nil }
         let size = NSSize(width: cellSize * CGFloat(box.columns),
                           height: cellSize * CGFloat(box.rows))
         guard size.width > 0, size.height > 0 else { return nil }
 
-        let body = set.bodyColor.map(color(from:))
-        let eye = set.eyeColor.map(color(from:))
+        // In monochrome mode the eyes are left transparent so the alpha channel
+        // itself carries the face.
+        let body = monochrome ? nil : set.bodyColor.map(color(from:))
+        let eye = monochrome ? nil : set.eyeColor.map(color(from:))
 
         let image = NSImage(size: size, flipped: false) { _ in
             guard let context = NSGraphicsContext.current else { return true }
