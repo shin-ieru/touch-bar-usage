@@ -14,9 +14,21 @@ enum MascotProvider {
     /// and to the source checkout during `make run`.
     static let localAssetRelativePath = "LocalAssets/claude-mascot.png"
 
-    static func mascot(height: CGFloat = 18) -> NSImage {
+    /// Which source actually supplied the current mascot, for Diagnostics.
+    static var activeSource: String {
+        if loadLocalAsset() != nil { return "local override" }
+        if ClawdPoseAsset.isAvailable { return "Clawd (generated locally)" }
+        return "built-in fallback mark"
+    }
+
+    /// `severity` selects a Clawd pose when generated assets are present; the
+    /// local override and the fallback mark are severity-independent.
+    static func mascot(height: CGFloat = 18, severity: UsageSeverity = .normal) -> NSImage {
         if let local = loadLocalAsset() {
             return resized(local, height: height)
+        }
+        if let clawd = ClawdPoseAsset.image(for: severity, height: height) {
+            return clawd
         }
         return fallbackMark(height: height)
     }

@@ -16,9 +16,11 @@ final class ClaudeCompactView: NSButton {
     private var viewModel: TouchBarViewModel
 
     private enum Layout {
-        static let mascotHeight: CGFloat = 18
+        /// Budget for the mascot. The pixel renderer snaps down to a whole
+        /// number of grid cells, so 30 yields 2pt cells and a legible creature.
+        static let mascotHeight: CGFloat = 30
         /// Slack so a fractional text width never clips the final character.
-        static let textSlack: CGFloat = 24
+        static let textSlack: CGFloat = 30
         static let maximumWidth: CGFloat = 300
     }
 
@@ -30,9 +32,11 @@ final class ClaudeCompactView: NSButton {
 
         bezelStyle = .rounded
         isBordered = true
-        image = MascotProvider.mascot(height: Layout.mascotHeight)
         imagePosition = .imageLeading
-        imageScaling = .scaleProportionallyDown
+        // .scaleNone keeps generated pixel art at its rendered size; scaling it
+        // would reintroduce the blur the renderer works to avoid.
+        imageScaling = .scaleNone
+        image = MascotProvider.mascot(height: Layout.mascotHeight, severity: viewModel.severity)
         target = self
         action = #selector(handleTap)
 
@@ -46,8 +50,25 @@ final class ClaudeCompactView: NSButton {
         onTap?()
     }
 
+    /// The pose always reflects real usage — there is no override or demo mode,
+    /// so the creature can never misreport the severity band.
+    private func refreshMascot() {
+        image = MascotProvider.mascot(height: Layout.mascotHeight, severity: viewModel.severity)
+        invalidateIntrinsicContentSize()
+        // The Touch Bar does not always repaint a hosted control just because its
+        // image property changed; ask explicitly.
+        needsDisplay = true
+        superview?.needsDisplay = true
+    }
+
     func apply(_ viewModel: TouchBarViewModel) {
+        let severityChanged = viewModel.severity != self.viewModel.severity
         self.viewModel = viewModel
+        // The mascot is redrawn only when the severity band changes, so there is
+        // no animation loop and no idle work.
+        if image == nil || severityChanged {
+            refreshMascot()
+        }
         attributedTitle = attributedText(for: viewModel)
         toolTip = viewModel.compactText
         isEnabled = true

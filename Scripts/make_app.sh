@@ -26,7 +26,17 @@ if [ -d "$BIN/TouchBarUsage_TouchBarUsage.bundle" ]; then
   cp -R "$BIN/TouchBarUsage_TouchBarUsage.bundle" "$APP/Contents/Resources/"
 fi
 
-# A developer's local mascot override, if present, is copied into the bundle.
+# Locally generated Clawd poses, if `make assets` has been run. GeneratedAssets/
+# is gitignored, so a clean checkout and CI simply ship without them and the app
+# falls back to its own placeholder mark.
+if [ -f "$ROOT/GeneratedAssets/Clawd/clawd-poses.json" ]; then
+  cp "$ROOT/GeneratedAssets/Clawd/clawd-poses.json" "$APP/Contents/Resources/clawd-poses.json"
+  echo "  included locally generated Clawd poses"
+else
+  echo "  no Clawd poses found (run 'make assets') — using fallback mark"
+fi
+
+# A developer's local mascot override takes precedence over Clawd.
 # LocalAssets/ is gitignored, so this never affects a clean checkout or CI.
 if [ -f "$ROOT/LocalAssets/claude-mascot.png" ]; then
   cp "$ROOT/LocalAssets/claude-mascot.png" "$APP/Contents/Resources/claude-mascot.png"

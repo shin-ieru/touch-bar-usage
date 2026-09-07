@@ -159,6 +159,8 @@ final class MenuBarController: NSObject {
         rebuild()
     }
 
+    /// Steps the Touch Bar mascot through each pose, then back to live. Only the
+    /// mascot changes; the percentages keep showing real usage throughout.
     @objc private func showDiagnostics() { onShowDiagnostics?() }
 
     @objc private func showAbout() {

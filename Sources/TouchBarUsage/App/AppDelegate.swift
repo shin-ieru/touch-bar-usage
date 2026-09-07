@@ -125,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         entries.append(contentsOf: await MainActor.run { touchBar.diagnostics })
         entries.append(.init(label: "Touch Bar presentation",
                              value: await MainActor.run { menuBar.isTouchBarEnabled ? "on" : "off" }))
+        entries.append(.init(label: "Mascot", value: await MainActor.run { MascotProvider.activeSource }))
         entries.append(contentsOf: await provider.diagnostics())
 
         let state = await coordinator.state
