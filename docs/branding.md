@@ -109,6 +109,34 @@ which tints to the bar. Two failure modes to avoid, both hit during development:
 - **The slot does not grow.** Artwork is capped at 44 pt wide and scaled down if
   it exceeds that, after an earlier version pushed the blossom off the edge.
 
+## Release artifacts ship no branded artwork
+
+`make package` builds with `BUNDLE_BRANDED_ASSETS=0`, so the distributed
+`.app` contains **only** this project's own fallback marks. Bundling Clawd's pose
+data into an artifact handed to other people would be redistribution, which the
+whole local-resolution design exists to avoid. The packaging script fails if any
+branded file is found in the bundle, and CI asserts the same on the built ZIP.
+
+Practical consequence, documented in the README and release notes: a downloaded
+build shows the fallback mark for Claude. Clawd requires building from source and
+running `make assets`. The Codex mark is unaffected — it resolves at runtime from
+an OpenAI app already on the user's own machine, so nothing is redistributed
+either way.
+
+## Documentation screenshots
+
+`docs/images/` holds real Touch Bar captures, and the Clawd and OpenAI marks are
+visible in them because they show the running interface.
+
+That is descriptive use, and distinct from shipping the assets: a screenshot does
+not let anyone reconstruct the artwork. **No claim is made that either mark is
+licensed to this project.** If a rights holder objects, they will be replaced with
+fallback-mark captures showing the same functionality.
+
+Before adding new screenshots, check them for personal content — app names, media
+titles, file paths, account names. Prefer recapturing in a neutral app over
+blurring.
+
 ## Mascot resolution order
 
 1. `LocalAssets/claude-mascot.png` — your own image, if present (gitignored);

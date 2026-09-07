@@ -33,13 +33,29 @@ project to remain MIT licensed. If you contribute, do not copy GPL code into it.
 
 ## Artwork
 
-The character mark shipped with this project is original, drawn procedurally in
-[`MascotProvider.swift`](Sources/TouchBarUsage/TouchBar/MascotProvider.swift).
-There is no bundled image file.
+The marks shipped with this project are original, drawn procedurally in
+[`MascotProvider.swift`](Sources/TouchBarUsage/TouchBar/MascotProvider.swift) and
+[`CombinedTrayBadgeResolver.swift`](Sources/TouchBarUsage/TouchBar/CombinedTrayBadgeResolver.swift).
+There is no bundled artwork file.
 
-No Anthropic artwork is included. See [`docs/branding.md`](docs/branding.md) for
-how to supply your own asset locally and what must be verified before any
-third-party artwork is added to a public release.
+**No Anthropic or OpenAI artwork is redistributed.** Clawd's pose data is fetched
+onto the developer's own machine by `make assets` and is excluded from both Git
+and release artifacts. The Codex mark is read at runtime from an OpenAI
+application already installed on the user's machine. Neither ever travels with
+this project. See [`docs/branding.md`](docs/branding.md).
+
+### Documentation screenshots
+
+`docs/images/` contains real Touch Bar screenshots used to show what the app looks
+like. Because they are photographs of the running interface, the Clawd and OpenAI
+marks are visible in them.
+
+This is descriptive use — showing the product in operation — and is distinct from
+redistributing the assets themselves: nothing in these images lets anyone
+reconstruct the underlying artwork. **No claim is made that either mark is
+licensed to this project.** If a rights holder objects, the screenshots will be
+replaced with fallback-mark captures, which show the same functionality using
+this project's own artwork.
 
 ## Trademarks
 

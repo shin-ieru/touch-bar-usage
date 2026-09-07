@@ -1,156 +1,116 @@
 # Touch Bar Usage
 
-Claude Code and Codex usage, one tap away on your MacBook Pro Touch Bar.
+**Claude Code and Codex usage, one tap away on your MacBook Pro Touch Bar.**
 
-Touch Bar Usage is a lightweight native macOS utility that keeps your AI coding
-quota a click away. **Your Touch Bar stays normal** — brightness, volume, media
-and per-app controls all behave exactly as they always have. Open the usage
-dashboard when you want it, and it gets out of the way again.
+A lightweight native macOS utility that adds a compact Claude + Codex badge to
+the Control Strip. Tap it to open a live usage dashboard, then close it to return
+to your normal Touch Bar.
 
-```
-Normal (resting)   ── native Touch Bar, plus one small badge ──
-                                                      [🯅◍]  ← tap this
+![Claude and Codex usage dashboard on the Touch Bar](docs/images/touchbar-dashboard.png)
 
-Usage mode         ┌──────────────────────────────────────────────────────┐
-(on demand)        │ [Clawd] Claude 5h72 W43   [◍] Codex 5h84 W51  [Close]│
-                   └──────────────────────────────────────────────────────┘
-```
+Tap a provider for reset times and freshness:
 
-At rest, a compact **Claude + Codex badge** sits in the Control Strip alongside
-brightness and volume. Tap it for the dashboard; tap a provider for its detail
-page. It stays open until you close it — there is no timeout — and macOS gets
-its Touch Bar straight back when you do.
+![Claude detail with reset times](docs/images/touchbar-claude-detail.png)
 
-> **Why on demand?** On macOS 26 a third-party Touch Bar surface is inherently
-> full-width. Keeping a dashboard permanently visible would mean permanently
-> displacing Apple's controls — a real cost paid all day for information glanced
-> at occasionally. So the badge stays put, and the dashboard is opened on demand
-> — it then stays open as long as you want it.
-> Measurements in [`docs/touchbar-research.md`](docs/touchbar-research.md).
+At rest, only the small badge is there — your native controls are untouched:
 
-## Project status
+![The compact Claude + Codex badge beside the native Control Strip](docs/images/touchbar-resting-badge.png)
 
-**Phase 2 — early development.** Claude Code and OpenAI Codex are both supported.
+*Real Touch Bar screenshots from a MacBook Pro (M2, 13-inch) running macOS 26.6.*
 
-Verified on physical Touch Bar hardware: the combined badge sits in the Control
-Strip and opens the dashboard, the native bar is preserved, both providers render
-with their own marks, detail pages work, the dashboard stays open until closed,
-and both Close and system sleep restore the native bar.
+## What it does
 
-Known limitations are recorded honestly in
-[`docs/manual-test-results.md`](docs/manual-test-results.md) — in particular that
-the badge requires one specific Touch Bar setting.
+- Shows **5-hour** and **weekly** quota for Claude Code and Codex, side by side.
+- Percentages are **quota used**, not remaining — for both providers.
+- Severity by glyph *and* colour, never colour alone: `!` at 85%, `!!` at 95%.
+- Tap a provider for reset times, or read both from the menu bar instead.
+- **Your Touch Bar stays normal.** Brightness, volume, media and per-app controls
+  behave exactly as they always have; the dashboard is opened on demand.
+- Once open, it **stays open** until you close it or the Mac sleeps. No timeout.
+- If a provider doesn't report a 5-hour window, it says `5h — not reported`
+  rather than showing a fabricated `0%`.
 
-## How you use it
-
-1. A small **Claude + Codex badge** sits in the Touch Bar's Control Strip. It
-   gains a `!` at 85% and `!!` at 95%, so a provider nearing its limit is visible
-   without opening anything.
-2. Tap it. The dashboard appears; tap **Claude** or **Codex** for detail.
-3. Read it for as long as you like — it stays open.
-4. **Close** — macOS gets its Touch Bar back instantly.
-
-Sleeping the Mac also closes the dashboard, so it can never come back as a stale
-bar. Waking restores the normal Touch Bar and the badge; it does **not** reopen
-the dashboard.
-
-### Touch Bar setting
-
-The badge requires **System Settings → Keyboard → Touch Bar shows → App
-Controls**, with **Show Control Strip** enabled. In other modes macOS does not
-draw third-party Control Strip items at all.
-
-If you'd rather not change that setting, everything still works from the **menu
-bar** (a gauge icon next to the clock): it lists both providers' figures and has
-**Show Usage on Touch Bar**, which opens the same dashboard. That route works in
-every Touch Bar mode.
-
-## What it displays
-
-**Dashboard** (usage mode):
-
-```
-[Clawd] Claude  5h 72%  W 43%     [◍] Codex  5h 84%  W 51%     [Close]
-```
-
-Percentages are **quota used**, not remaining — for both providers. Under width
-pressure a chip drops its provider name before it will ever truncate a number.
-
-**Detail** (tap a provider):
-
-```
-‹ Back   [Clawd] Claude   5h  72% used  resets in 2h 13m
-                          Week 43% used  resets Wed 11:25 AM
-         Updated just now                                   [ Close ]
-```
-
-Per-model weekly caps, when Anthropic returns them, appear here rather than
-cluttering the dashboard.
-
-If a provider doesn't report a 5-hour window, it says so — `5h — not reported` —
-rather than showing a fabricated `0%`.
-
-**Severity** is shown by glyph *and* colour, never colour alone:
-
-| Used | State | Indicator |
-| --- | --- | --- |
-| 0–59% | normal | — |
-| 60–84% | elevated | — |
-| 85–94% | warning | `!` + orange |
-| 95–100% | critical | `!!` + red |
-
-**Other states:** `loading…`, `sign in`, `refresh later` (rate limited),
-`offline`, and a trailing `~` when data is cached and could not be refreshed.
+No analytics, no telemetry, no developer backend. See [Privacy & security](#privacy--security).
 
 ## Requirements
 
-- **A MacBook Pro with a physical Touch Bar** for the dashboard. Without one the
-  app still runs and the menu bar shows everything.
-- macOS 13 or later. Developed and verified on **macOS 26.6.2** (arm64,
-  `Mac14,7`).
-- Xcode 26 / Swift 6.3 to build.
-- **Claude Code installed and signed in**, for Claude usage. This app reads the
-  credential Claude Code already stores; it never asks you for a token.
-- **Codex installed and signed in**, for Codex usage. This app never sees an
-  OpenAI token at all — see below.
+| | |
+| --- | --- |
+| Hardware | MacBook Pro with a **physical Touch Bar** |
+| Architecture | **Apple Silicon tested**; Intel Touch Bar Macs not yet verified |
+| macOS | 13 or later; **tested on macOS 26.6.2** |
+| Touch Bar setting | **App Controls + Show Control Strip** (see below) |
+| For Claude usage | Claude Code installed and signed in |
+| For Codex usage | Codex installed and signed in |
 
 Either provider works without the other. If Codex isn't installed, Claude carries
-on and Codex simply reports "not found".
+on and Codex reports `Not installed`.
 
-## Build from source
+Without a Touch Bar the app still runs and the menu bar shows everything.
+
+## Install
+
+### From a release build
+
+1. Download `Touch-Bar-Usage-v0.1.0-macOS.zip` from the Releases page.
+2. Verify the checksum against the published `.sha256`:
+   ```bash
+   shasum -a 256 Touch-Bar-Usage-v0.1.0-macOS.zip
+   ```
+3. Unzip and move **Touch Bar Usage.app** to `/Applications`.
+4. **First launch:** the build is *not* notarized (see below), so macOS will
+   refuse to open it by double-click. Right-click the app → **Open** → **Open**.
+   You only need to do this once.
+
+> **⚠️ Not signed with a Developer ID and not notarized.** v0.1.0 is ad-hoc
+> signed only. Gatekeeper will warn you on first launch. If you would rather not
+> accept that, **build from source** instead — it takes about a minute. Do not
+> disable Gatekeeper system-wide to work around this.
+
+Release builds ship with the project's own fallback mascot mark. The Clawd
+artwork is not redistributable, so it is only available when you
+[build from source](#build-from-source) and run `make assets`.
+
+### From source
 
 ```bash
 git clone <this-repo>
 cd touch-bar-usage
-
-make assets  # fetch Clawd pose data onto your machine (optional but recommended)
-make test    # 171 unit tests — no network, keychain, Codex or Touch Bar needed
-make run     # builds dist/Touch Bar Usage.app and launches it
+make assets   # optional: fetches Clawd artwork onto your machine
+make run
 ```
 
-`make assets` is what gets you Clawd. Skip it and the app still builds and runs,
-using its own placeholder mark instead — see [Mascot](#mascot).
+## macOS Touch Bar setup
 
-Other targets:
+The badge needs one specific setting:
 
-```bash
-make build     # compile
-make app       # assemble the .app bundle only
-make assets    # fetch Clawd pose data locally (gitignored output)
-make preview   # render PNG previews of every UI state to PreviewOutput/
-make audit     # scan tracked files for secrets, artwork and machine-specific paths
-make clean     # build products only; generated Clawd assets are kept
+```
+System Settings → Keyboard → Touch Bar Settings
+    Touch Bar shows:    App Controls
+    Show Control Strip: On
 ```
 
-On first launch macOS asks permission to read the Claude Code keychain item.
-That prompt is the app reading your existing credential; approving it is what
-lets it fetch usage. The app requests no other permission.
+> The combined Claude + Codex badge relies on the **App Controls + Show Control
+> Strip** configuration. In other Touch Bar display modes macOS does not render
+> the custom tray item at all. The menu-bar command remains available as a
+> fallback in every mode.
 
-To keep it running, use **Launch at Login** in the menu. macOS registers login
-items only for apps in a standard location, so move
-`dist/Touch Bar Usage.app` to `/Applications` first.
+## Usage
 
-## How Claude usage is obtained
+1. The badge sits in the Control Strip. It gains `!` at 85% and `!!` at 95%, so a
+   provider nearing its limit is visible without opening anything.
+2. Tap it — the dashboard opens and stays open.
+3. Tap **Claude** or **Codex** for reset times; **‹ Back** returns.
+4. **Close** — your native Touch Bar returns instantly.
+
+Sleeping the Mac also closes the dashboard, so it can never come back as a stale
+bar. Waking restores the normal Touch Bar and the badge, and does **not** reopen
+the dashboard.
+
+The menu bar (a gauge icon near the clock) mirrors both providers' figures and
+offers **Show Usage on Touch Bar**, which works in every Touch Bar mode.
+
+## Claude integration
 
 The app reads the access token Claude Code already stores in your macOS Keychain
 and makes one read-only request:
@@ -188,7 +148,7 @@ re-authenticate in Claude Code. It will not do that for you, by design.
 Full detail: [`SECURITY.md`](SECURITY.md) and
 [`docs/security-model.md`](docs/security-model.md).
 
-## How Codex usage is obtained
+## Codex integration
 
 Through the **local Codex App Server** — no OpenAI credential ever reaches this
 app:
@@ -213,12 +173,37 @@ Message shapes come from the app server's own generated schema
 (`codex app-server generate-json-schema`), not guesswork. Details:
 [`docs/codex-integration.md`](docs/codex-integration.md).
 
-## Privacy
+### Finding Codex
 
-No telemetry, no analytics, no crash reporting, no ads, and **no developer
-backend of any kind**. See [`PRIVACY.md`](PRIVACY.md).
+The app looks for the Codex CLI in the usual places — `PATH`, both Homebrew
+prefixes, common user-local install directories, and the binary bundled inside
+the OpenAI editor extensions. No single location is assumed, and newer versions
+are preferred. Set `TBU_CODEX_PATH` to point at a specific build.
 
-## System-wide Touch Bar and private APIs
+If none is found, Codex reports `Not installed` and Claude carries on unaffected.
+
+## Privacy & security
+
+Touch Bar Usage has no analytics, telemetry, ads, crash reporting, or developer
+backend. There is no server component; there is nowhere for your data to go.
+
+**Claude** — reads only `accessToken` and `expiresAt` from the Claude Code
+keychain item, for one read-only usage request. The refresh token is never read
+or used, the access token is never persisted or logged, and the keychain is never
+modified.
+
+**Codex** — talks to the local Codex App Server over stdio. It does **not** read
+`~/.codex/auth.json`, never receives an OpenAI bearer token, and contacts no
+OpenAI host.
+
+Neither provider path reads your conversations, prompts, source files, browser
+cookies, or terminal history. The on-disk cache holds only percentages, reset
+times and labels.
+
+Deeper detail: [`SECURITY.md`](SECURITY.md), [`PRIVACY.md`](PRIVACY.md),
+[`docs/security-model.md`](docs/security-model.md).
+
+## Private macOS APIs
 
 A normal `NSTouchBar` belongs to the front-most app, which cannot express "stay
 visible while I work elsewhere". This app therefore uses private macOS APIs
@@ -275,22 +260,53 @@ make run
 rationale and the licensing rules for contributors are in
 [`docs/branding.md`](docs/branding.md).
 
+## Development
+
+```bash
+make build         # compile (CONFIGURATION=debug for faster iteration)
+make test          # 171 unit tests — no network, keychain, Codex or Touch Bar
+make run           # build the .app bundle and launch it
+make assets        # fetch Clawd artwork onto this machine (gitignored output)
+make preview       # render PNG previews of every UI state to PreviewOutput/
+make audit         # scan tracked files for secrets, artwork and machine paths
+make build-release # Release-optimised build plus bundle
+make package       # Release artifact + SHA-256 into dist/
+make release-check # tests + audit + release build
+make clean
+```
+
+`make assets` is optional. Without it the app uses its own fallback mark and
+everything else works; the generated Clawd data is deliberately excluded from Git
+*and* from release artifacts, because it is not ours to redistribute. See
+[`docs/branding.md`](docs/branding.md).
+
+Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Troubleshooting
 
-**Widget doesn't appear.** Open Diagnostics from the menu bar. If
-`System modal bridge: unsupported`, the private APIs this depends on are not
-available on your macOS version. If `Touch Bar hardware: not detected`, your Mac
-has no physical Touch Bar.
+**Badge doesn't appear.** Check
+`System Settings → Keyboard → Touch Bar Settings`: **Touch Bar shows** must be
+**App Controls** and **Show Control Strip** must be **On**. Then quit and relaunch
+Touch Bar Usage. In other modes macOS does not draw third-party Control Strip
+items; use **Show Usage on Touch Bar** from the menu bar instead.
 
-**I want my native controls back.** Use **Touch Bar: Off** in the menu. It tears
-the presentation down immediately; switch it back on when you want the widget.
+**Nothing on the Touch Bar at all.** Open Diagnostics from the menu bar. If
+`Usage bar API: unsupported`, the private APIs are unavailable on your macOS
+version. If `Touch Bar hardware: not detected`, your Mac has no physical Touch Bar.
 
-**Can I have both at once?** Not on macOS 26 — see the warning at the top. If a
-future macOS restores third-party Control Strip items, set
-`TBU_TOUCHBAR_STRATEGY=controlStripItem` to re-test the coexistence path, which
-is still in the code.
+**Touch Bar stopped working after a macOS update.** Likely a private-API change.
+Use the menu-bar fallback and please open an issue with your macOS version and
+the Diagnostics output.
 
-**Shows `sign in`.** Your Claude Code token is expired or missing. Run `claude` and
+**Branded mascot missing.** Release builds ship the fallback mark by design. Build
+from source and run `make assets` for Clawd. The Codex mark resolves from an
+OpenAI app already installed on your machine.
+
+**Codex says `Not installed`.** Confirm Codex is installed and signed in
+(`codex login`), then check Diagnostics. Set `TBU_CODEX_PATH` if it lives
+somewhere unusual.
+
+**Claude shows `sign in`.** Your Claude Code token is expired or missing. Run `claude` and
 sign in; the widget picks it up on the next refresh (or use **Refresh Now**).
 
 **Shows `keychain access denied` in Diagnostics.** You declined the keychain
@@ -304,15 +320,31 @@ with a `~`.
 **Numbers look stale.** A trailing `~` means exactly that. Use **Refresh Now**;
 there is a 60-second floor between fetches.
 
-**Duplicate widget after a rebuild.** Quit from the menu bar rather than killing
+**Duplicate badge after a rebuild.** Quit from the menu bar rather than killing
 the process, so cleanup runs. If one is stranded, log out and back in.
+
+## Known limitations
+
+- A **physical Touch Bar is required** for the badge and dashboard.
+- The badge needs **App Controls + Show Control Strip**; other Touch Bar modes
+  hide it. The menu-bar command works in all modes.
+- Built on **undocumented private macOS APIs** — a macOS update may break the
+  Touch Bar integration. It degrades to menu-bar-only rather than crashing.
+- **Not notarized** in v0.1.0; Gatekeeper warns on first launch.
+- **Intel Touch Bar Macs are unverified.** Apple Silicon only so far.
+- Codex does not always report both windows; a missing 5-hour window is shown as
+  `not reported`.
+- The Claude usage endpoint is **undocumented** and may change upstream.
+- Not distributed through the Mac App Store, and cannot be.
 
 ## Roadmap
 
 ```
 Phase 1  —  Claude Code            ✓ done
-Phase 2  —  OpenAI Codex           ← you are here
-Later    —  release hardening (signing, notarization, Homebrew Cask)
+Phase 2  —  OpenAI Codex           ✓ done
+v0.1.0   —  first public release   ← you are here
+Later    —  Developer ID signing + notarization
+            Homebrew Cask
             additional usage providers if useful
 ```
 
@@ -325,9 +357,9 @@ Adding a third provider should not require touching either existing one; see
 
 ## Contributing
 
-Read [`docs/provider-contract.md`](docs/provider-contract.md) before adding a
-provider, and run `make test && make audit` before opening a pull request. Never
-commit a credential, a real captured response, or third-party artwork.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: run `make test && make audit`
+before opening a pull request, and never commit a credential, a real captured
+response, or third-party artwork.
 
 ## License
 
