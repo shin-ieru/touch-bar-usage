@@ -9,10 +9,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# What CI proves: the logic and the build. What it cannot prove: that anything
+# renders on a physical Touch Bar. GitHub runners have no Touch Bar, no Claude
+# Code, and no Codex, and that is deliberate — the whole suite must pass without
+# them. Physical behaviour is verified by hand and recorded in
+# docs/manual-test-results.md.
 jobs:
   build-and-test:
-    name: Build and test
+    name: Build and test (${{ matrix.configuration }})
     runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [debug, release]
     steps:
       - uses: actions/checkout@v4
 
@@ -20,28 +29,34 @@ jobs:
         run: swift --version && xcodebuild -version
 
       # The whole suite runs headless: no credential, no network, no Touch Bar,
-      # no Claude Code install. If a test ever needs one of those, it belongs in
+      # neither CLI installed. If a test ever needs one of those, it belongs in
       # docs/manual-test-results.md instead.
       - name: Test
-        run: swift test
+        run: swift test -c ${{ matrix.configuration }}
 
-      - name: Build release
-        run: swift build -c release
+      - name: Build
+        run: swift build -c ${{ matrix.configuration }}
 
       # Compile-time validation of the private-API bridge. GitHub runners have no
       # physical Touch Bar, so this proves the bridge *compiles and links*; it
       # deliberately does not assert that presentation works. Physical runtime
       # verification remains a manual, documented requirement.
       - name: Assemble app bundle
-        run: make app
+        run: make app CONFIGURATION=${{ matrix.configuration }}
 
-      - name: Verify bundle layout
+      - name: Verify bundle layout and version
         run: |
           APP="dist/Touch Bar Usage.app"
           test -x "$APP/Contents/MacOS/TouchBarUsage"
           test -f "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist"
+          # The Info.plist version must match the single source of truth.
+          PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+          FILE_VERSION=$(tr -d '[:space:]' < VERSION)
+          if [ "$PLIST_VERSION" != "$FILE_VERSION" ]; then
+            echo "version mismatch: Info.plist $PLIST_VERSION vs VERSION $FILE_VERSION"; exit 1
+          fi
 
       # A clean checkout must never contain mascot artwork, and must build and
       # run without it. CI deliberately does NOT run `make assets`: fetching
@@ -71,3 +86,32 @@ jobs:
       - uses: actions/checkout@v4
       - name: Audit tracked files
         run: make audit
+
+  package:
+    name: Release packaging
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Proves the release path works from a clean checkout with no local
+      # branded assets — which is exactly the state a contributor or a release
+      # build starts from.
+      - name: Package
+        run: make package
+
+      - name: Verify artifact and checksum
+        run: |
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          ARTIFACT="dist/Touch-Bar-Usage-v$VERSION-macOS.zip"
+          test -f "$ARTIFACT"
+          test -f "$ARTIFACT.sha256"
+          ( cd dist && shasum -a 256 -c "$(basename "$ARTIFACT").sha256" )
+
+      - name: Assert artifact ships no third-party artwork
+        run: |
+          rm -rf /tmp/verify && mkdir -p /tmp/verify
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          ditto -x -k "dist/Touch-Bar-Usage-v$VERSION-macOS.zip" /tmp/verify
+          if find /tmp/verify -name 'clawd-poses.json' -o -name 'claude-mascot.png' | grep -q .; then
+            echo "release artifact contains artwork this project may not redistribute"; exit 1
+          fi
