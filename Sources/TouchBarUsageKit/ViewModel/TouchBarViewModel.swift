@@ -204,10 +204,19 @@ public struct DetailViewModel: Equatable, Sendable {
             )
         }
 
+        // A provider that reports no short window must say so. Showing 0%, or
+        // omitting the row silently, would both read as "plenty left".
+        var allRows = rows
+        if snapshot.shortWindow == nil {
+            allRows.insert(
+                Row(label: "5h", usage: "not reported", reset: "", severity: .normal),
+                at: 0)
+        }
+
         var footer = "Updated \(ResetFormatter.age(since: snapshot.fetchedAt, now: now))"
         if case .stale(_, let reason) = state {
             footer += " · cached\(reason.map { " (\($0))" } ?? "")"
         }
-        return DetailViewModel(title: providerName, rows: rows, footer: footer)
+        return DetailViewModel(title: providerName, rows: allRows, footer: footer)
     }
 }
