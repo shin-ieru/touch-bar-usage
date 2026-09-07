@@ -72,6 +72,15 @@ else
   echo "  ok: no Clawd pose data tracked"
 fi
 
+echo "==> Checking composed tray badges are not tracked"
+# Only the original drawn fallback badge ships; anything composed from Clawd or
+# the Codex blossom stays on the developer's machine.
+if files | grep -E 'combined-tray-badge|GeneratedAssets/CombinedBadge' 2>/dev/null; then
+  echo "FAIL: composed tray badge artwork must stay gitignored"; status=1
+else
+  echo "  ok: no composed tray badge tracked"
+fi
+
 echo "==> Checking the mascot has no runtime network dependency"
 # Pose data is fetched at build time by Scripts/, never by the running app.
 if files | grep -E '^Sources/.*(Mascot|Clawd)' | xargs grep -nE 'URLSession|dataTask|URLRequest|fetch\(' 2>/dev/null; then

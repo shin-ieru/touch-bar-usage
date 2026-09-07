@@ -26,6 +26,12 @@ clawd_presets.h
 .asset-cache/
 *.clawd-src
 
+# Composed tray badge built from third-party marks. The repository ships only
+# the original drawn fallback badge; anything composed from Clawd or the Codex
+# blossom is local to the developer's machine.
+combined-tray-badge.*
+GeneratedAssets/CombinedBadge/
+
 # Development preview renders
 PreviewOutput/
 
