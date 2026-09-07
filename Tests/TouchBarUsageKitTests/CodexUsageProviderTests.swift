@@ -204,7 +204,7 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertEqual(presentation.detailProviderID, "claude")
         presentation = .dashboard              // Back
         XCTAssertNil(presentation.detailProviderID)
-        presentation = .normal                 // Close or auto-dismiss
+        presentation = .normal                 // explicit Close, or system sleep
         XCTAssertFalse(presentation.isUsageModeOpen)
     }
 

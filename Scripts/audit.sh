@@ -72,6 +72,18 @@ else
   echo "  ok: no Clawd pose data tracked"
 fi
 
+echo "==> Checking usage mode has no inactivity timeout"
+# Usage mode stays open until the user closes it or the Mac sleeps. A timer that
+# dismisses it behind the user's back was removed deliberately; this keeps it out.
+# Comment lines are excluded so the docs explaining the removal do not trip it.
+if files | grep -E '^Sources/' \
+   | xargs grep -nE 'autoDismiss|dismissTimer|idleTimer|inactivityTimer|lastInteraction' 2>/dev/null \
+   | grep -vE ':[0-9]+:[[:space:]]*(///|//|\*)'; then
+  echo "FAIL: an inactivity dismissal timer has reappeared"; status=1
+else
+  echo "  ok: no inactivity timeout"
+fi
+
 echo "==> Checking composed tray badges are not tracked"
 # Only the original drawn fallback badge ships; anything composed from Clawd or
 # the Codex blossom stays on the developer's machine.
