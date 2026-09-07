@@ -66,17 +66,19 @@ enum PreviewRenderer {
         var count = 0
 
         // Normal mode: the small Control Strip entry point, at each severity.
+        //
+        // Rendered in the light appearance, which inverts what the hardware does
+        // — the Touch Bar is always dark and template artwork tints to near-white
+        // there. These previews are for checking composition and fit; whether the
+        // mark reads as a blob on OLED black can only be settled on the device.
         for (name, severity) in [("normal", UsageSeverity.normal), ("elevated", .elevated),
-                                 ("warning", .warning), ("critical", .critical)] {
+                                 ("warning", .warning), ("critical", .critical),
+                                 ("loading", nil)] as [(String, UsageSeverity?)] {
             let tray = UsageTrayView(severity: severity)
             write(view: tray, size: tray.frame.size,
                   to: directory.appendingPathComponent("tray-\(name).png"))
             count += 1
         }
-        let trayLoading = UsageTrayView(severity: nil)
-        write(view: trayLoading, size: trayLoading.frame.size,
-              to: directory.appendingPathComponent("tray-loading.png"))
-        count += 1
 
         // Usage mode: the expanded dual-provider dashboard in each state.
         for scenario in scenarios {

@@ -209,6 +209,8 @@ final class TouchBarController: NSObject {
         var entries = SystemModalTouchBarBridge.availabilityReport
         entries.append(.init(label: "Touch Bar tray item",
                              value: bridge.isTrayItemInstalled ? "installed" : "not installed"))
+        entries.append(.init(label: "Tray badge",
+                             value: CombinedTrayBadgeResolver.activeSource.diagnosticDescription))
         entries.append(.init(label: "Touch Bar mode",
                              value: presentation.isUsageModeOpen ? "usage mode" : "normal (native)"))
         return entries

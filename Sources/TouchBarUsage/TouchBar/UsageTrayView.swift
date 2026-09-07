@@ -15,9 +15,16 @@ final class UsageTrayView: NSButton {
 
     private enum Layout {
         /// Kept deliberately tight. The Control Strip slot does not widen to fit.
-        static let width: CGFloat = 64
-        static let widthWithGlyph: CGFloat = 76
         static let height: CGFloat = 30
+        /// Horizontal padding around the badge inside the button. Kept tight:
+        /// the Control Strip slot does not grow, and padding spent here is width
+        /// taken from the artwork.
+        static let padding: CGFloat = 7
+        /// Extra room for the severity glyph when one is shown.
+        static let glyphWidth: CGFloat = 14
+        /// Floor, so the button stays comfortably tappable even if a badge is
+        /// unusually narrow.
+        static let minimumWidth: CGFloat = 56
     }
 
     private var severity: UsageSeverity?
@@ -26,10 +33,12 @@ final class UsageTrayView: NSButton {
 
     init(severity: UsageSeverity? = nil) {
         self.severity = severity
-        super.init(frame: NSRect(x: 0, y: 0, width: Layout.width, height: Layout.height))
+        super.init(frame: NSRect(x: 0, y: 0, width: Layout.minimumWidth, height: Layout.height))
         bezelStyle = .rounded
         isBordered = true
-        imagePosition = .noImage
+        // The badge carries the identity; the glyph is a trailing severity cue.
+        imagePosition = .imageLeading
+        imageScaling = .scaleNone
         target = self
         action = #selector(handleTap)
         apply(severity: severity)
@@ -43,30 +52,37 @@ final class UsageTrayView: NSButton {
     /// loaded yet.
     func apply(severity: UsageSeverity?) {
         self.severity = severity
-        attributedTitle = title(for: severity)
-        toolTip = "AI usage — tap to open"
 
-        let needsGlyph = (severity?.glyph != nil)
-        let width = needsGlyph ? Layout.widthWithGlyph : Layout.width
-        setFrameSize(NSSize(width: width, height: Layout.height))
+        let badge = CombinedTrayBadgeResolver.badge()
+        image = badge
+        attributedTitle = glyphTitle(for: severity)
+
+        // Sized to the badge actually resolved, rather than a fixed guess, so a
+        // local override of a different aspect ratio still fits without clipping.
+        var width = badge.size.width + Layout.padding * 2
+        if severity?.glyph != nil { width += Layout.glyphWidth }
+        setFrameSize(NSSize(width: max(width.rounded(), Layout.minimumWidth),
+                            height: Layout.height))
+
+        toolTip = "Claude + Codex usage — tap to open"
         invalidateIntrinsicContentSize()
         needsDisplay = true
     }
 
-    /// "AI", "AI !" when a provider is in warning, "AI !!" when critical.
-    /// Colour is never the only signal — the glyph carries it too.
-    private func title(for severity: UsageSeverity?) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        var text = "AI"
-        if let glyph = severity?.glyph { text += " \(glyph)" }
+    /// The badge is the identity; this adds only the severity cue — "!" at
+    /// warning, "!!" at critical. Colour is never the sole signal, and at normal
+    /// or elevated there is no text at all, keeping the slot as narrow as
+    /// possible.
+    private func glyphTitle(for severity: UsageSeverity?) -> NSAttributedString {
+        guard let glyph = severity?.glyph else { return NSAttributedString(string: "") }
 
-        let colour: NSColor
-        switch severity {
-        case .critical: colour = .systemRed
-        case .warning:  colour = .systemOrange
-        default:        colour = .labelColor
-        }
-        return NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: colour])
+        let colour: NSColor = (severity == .critical) ? .systemRed : .systemOrange
+        return NSAttributedString(
+            string: " \(glyph)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+                .foregroundColor: colour,
+            ])
     }
 
     override var intrinsicContentSize: NSSize { frame.size }
