@@ -46,6 +46,49 @@ structurally — no screen scraping, no OCR.
 > `/usage` output at the same moment has **not** been performed. Run `/usage` in
 > Claude Code and compare against the menu-bar figures to close this out.
 
+## Persistent usage mode (macOS 26.6.2)
+
+Auto-dismiss was removed. Usage mode now stays open until the user closes it or
+the Mac sleeps.
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | Dashboard stays open 60 s+ untouched (old timeout was 12 s) | **pass** |
+| 2 | Claude detail stays open past the old threshold | **pass** |
+| 3 | Codex detail stays open past the old threshold | **pass** |
+| 4 | Survives switching Finder / Terminal / Safari / Xcode | **pass** |
+| 5 | Provider refresh while open does not dismiss it | **pass** |
+| 6 | Close restores the native Touch Bar immediately | **pass** |
+| 7 | Badge still present after Close | **pass** |
+| 8 | **Sleep while dashboard open → dismissed** | **pass** — verified by physically sleeping and waking the Mac |
+| 9 | **Wake does not reopen the dashboard** | **pass** |
+| 10 | Badge present after wake | **pass** |
+| 11 | No stale or ghost bar after wake | **pass** |
+
+Sleep/wake was performed on the actual machine, not simulated.
+
+### What was removed
+
+`dismissTimer`, `autoDismissInterval` (12 s), `restartDismissTimer()`,
+`autoDismiss()`, `stopDismissTimer()`, and the `onInteraction` callbacks that
+existed only to reset the deadline. The interactions themselves — tap a provider,
+Back, Close — are unchanged.
+
+Timers deliberately kept: the 30 s countdown tick while a detail page is visible,
+the 300 s provider refresh, provider backoff, and the RPC timeout. None of them
+can dismiss usage mode.
+
+`make audit` now fails if `autoDismiss`, `dismissTimer`, `idleTimer`,
+`inactivityTimer` or `lastInteraction` reappears in non-comment source.
+
+### Not verified
+
+| Check | Status |
+| --- | --- |
+| Multi-hour persistence | not verified — checked to a few minutes, not left open all day |
+| Tray badge re-installation after wake | not exercised — the badge survived the sleep cycle, so the reinstall path never ran |
+| Sleep while a *detail* page is open (rather than the dashboard) | not verified — sleep was tested from the dashboard; covered by unit tests |
+
 ## Combined tray badge patch (macOS 26.6.2)
 
 ### The Phase 2 conclusion was wrong, and this corrects it
@@ -73,7 +116,7 @@ generalisation from them was not.
 | 5 | Nothing clipped | **pass** — after the fix below |
 | 6 | Tapping the badge opens the dashboard | **pass** |
 | 7 | Close restores the native Touch Bar | **pass** |
-| 8 | Auto-dismiss restores the native Touch Bar | **pass** |
+| 8 | Auto-dismiss restores the native Touch Bar | **pass at the time** — auto-dismiss has since been removed; see the persistent usage mode section above |
 | 9 | Badge still present after dismissal | **pass** |
 | 10 | Quit and relaunch leaves no duplicate | **pass** |
 
@@ -116,7 +159,7 @@ checks for that architecture, performed by direct observation on the target Mac.
 | 10 | Detail page shows that provider's own numbers | **pass** — Codex detail verified |
 | 11 | Back returns to the dashboard | **pass** |
 | 12 | Close restores the native Touch Bar immediately | **pass** |
-| 13 | Auto-dismiss (~12s) restores the native bar | **pass** |
+| 13 | Auto-dismiss (~12s) restores the native bar | **pass at the time** — behaviour later removed deliberately |
 | 14 | Quit tears down cleanly | **pass** — `touch bar presentation torn down` / `terminated cleanly` |
 | 15 | No orphaned Codex child process | **pass** — `codex app-server` count 1 → 0 → 1 across quit/relaunch |
 | 16 | Relaunch leaves no duplicate | **pass** |

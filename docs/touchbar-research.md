@@ -181,9 +181,17 @@ Phase 2 inverts it:
 | **Usage mode** (on demand) | our dashboard, full width | temporary |
 
 Usage mode is entered from the menu bar, shows both providers, allows a detail
-page per provider, and leaves on Close or after ~12 seconds of inactivity. This
-is an intentional reliability choice grounded in the target-hardware testing
-above, not a limitation we stumbled into.
+page per provider, and stays open until the user closes it. This is an
+intentional reliability choice grounded in the target-hardware testing above, not
+a limitation we stumbled into.
+
+**There is no inactivity timeout.** An earlier version dismissed after 12
+seconds, which meant the bar vanished while the user was still reading a reset
+time. The only non-user event that closes usage mode is **system sleep**: a
+system-modal bar left presented across a sleep/wake cycle risks returning as a
+stale bar that cannot be dismissed, so it is torn down while the machine is still
+awake. Waking restores the native bar and the tray badge, and never reopens the
+dashboard.
 
 Native controls are **not reimplemented**. Drawing fake brightness and volume
 buttons was explicitly rejected: they would be a worse imitation of controls the
@@ -214,7 +222,7 @@ This is the shipped interaction model:
 
 1. **Normal** — macOS owns the Touch Bar; we contribute one small badge.
 2. **Usage mode** — tap the badge for the full Claude + Codex dashboard.
-3. Close or auto-dismiss returns the bar to macOS.
+3. Close — or system sleep — returns the bar to macOS.
 
 ### Requirement
 

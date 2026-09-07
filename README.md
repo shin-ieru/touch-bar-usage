@@ -18,14 +18,15 @@ Usage mode         ┌───────────────────�
 
 At rest, a compact **Claude + Codex badge** sits in the Control Strip alongside
 brightness and volume. Tap it for the dashboard; tap a provider for its detail
-page; close it, or leave it ~12 seconds, and macOS gets its Touch Bar straight
-back.
+page. It stays open until you close it — there is no timeout — and macOS gets
+its Touch Bar straight back when you do.
 
 > **Why on demand?** On macOS 26 a third-party Touch Bar surface is inherently
 > full-width. Keeping a dashboard permanently visible would mean permanently
 > displacing Apple's controls — a real cost paid all day for information glanced
-> at occasionally. So the badge stays, and the dashboard is deliberately
-> temporary. Measurements in [`docs/touchbar-research.md`](docs/touchbar-research.md).
+> at occasionally. So the badge stays put, and the dashboard is opened on demand
+> — it then stays open as long as you want it.
+> Measurements in [`docs/touchbar-research.md`](docs/touchbar-research.md).
 
 ## Project status
 
@@ -33,8 +34,8 @@ back.
 
 Verified on physical Touch Bar hardware: the combined badge sits in the Control
 Strip and opens the dashboard, the native bar is preserved, both providers render
-with their own marks, detail pages work, and Close and auto-dismiss both restore
-the native bar.
+with their own marks, detail pages work, the dashboard stays open until closed,
+and both Close and system sleep restore the native bar.
 
 Known limitations are recorded honestly in
 [`docs/manual-test-results.md`](docs/manual-test-results.md) — in particular that
@@ -46,7 +47,12 @@ the badge requires one specific Touch Bar setting.
    gains a `!` at 85% and `!!` at 95%, so a provider nearing its limit is visible
    without opening anything.
 2. Tap it. The dashboard appears; tap **Claude** or **Codex** for detail.
-3. **Close**, or wait ~12 seconds — macOS gets its Touch Bar back.
+3. Read it for as long as you like — it stays open.
+4. **Close** — macOS gets its Touch Bar back instantly.
+
+Sleeping the Mac also closes the dashboard, so it can never come back as a stale
+bar. Waking restores the normal Touch Bar and the badge; it does **not** reopen
+the dashboard.
 
 ### Touch Bar setting
 
@@ -118,7 +124,7 @@ git clone <this-repo>
 cd touch-bar-usage
 
 make assets  # fetch Clawd pose data onto your machine (optional but recommended)
-make test    # 149 unit tests — no network, keychain, Codex or Touch Bar needed
+make test    # 171 unit tests — no network, keychain, Codex or Touch Bar needed
 make run     # builds dist/Touch Bar Usage.app and launches it
 ```
 

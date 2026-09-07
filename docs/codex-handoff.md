@@ -29,8 +29,8 @@ system-modal bar is inherently full-width on macOS 26, that permanently hid
 brightness, volume and media. Phase 2 inverts it:
 
 - **Normal mode** — macOS owns the Touch Bar. This is the resting state.
-- **Usage mode** — the dashboard is presented on demand, and dismissed by Close
-  or after ~12s of inactivity.
+- **Usage mode** — the dashboard is presented on demand and stays open until the
+  user closes it, or the Mac sleeps. There is no inactivity timeout.
 
 The intended Touch Bar entry point (a small Control Strip item) **does not render
 on macOS 26.6.2** despite registering successfully; the menu bar is the entry
