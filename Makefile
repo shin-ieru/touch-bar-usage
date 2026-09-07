@@ -1,9 +1,10 @@
 # Terminal-first workflow. No user-specific absolute paths anywhere.
 .DEFAULT_GOAL := build
-.PHONY: build test run app assets clean preview lint audit
+.PHONY: build build-release test run app assets clean preview lint audit package release-check version
 
 CONFIGURATION ?= release
 APP := dist/Touch Bar Usage.app
+VERSION := $(shell tr -d '[:space:]' < VERSION)
 
 ## Compile everything (debug is faster for iteration: CONFIGURATION=debug)
 build:
@@ -41,3 +42,22 @@ clean:
 ## Scan the working tree for credential-shaped strings and machine-specific paths.
 audit:
 	./Scripts/audit.sh
+
+## Print the release version (single source of truth: the VERSION file).
+version:
+	@echo $(VERSION)
+
+## Build with Release optimisation, from clean, and assemble the bundle.
+build-release:
+	swift build -c release
+	CONFIGURATION=release ./Scripts/make_app.sh
+
+## Build the Release artifact plus its SHA-256 checksum into dist/.
+package:
+	./Scripts/package_release.sh
+
+## Everything that must pass before tagging a release.
+release-check: test audit
+	swift build -c release
+	@echo
+	@echo "Release checks passed for v$(VERSION)."

@@ -10,7 +10,11 @@ CONFIGURATION="${CONFIGURATION:-release}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Touch Bar Usage"
 BUNDLE_ID="com.gabrielanyog.touchbarusage"
-VERSION="0.1.0"
+# Single source of truth for the marketing version; the packaging script reads
+# the same file, so artifact names and Info.plist can never disagree.
+VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+# Build number: the commit it was built from, which is more useful for a bug
+# report than a counter someone has to remember to bump.
 BUILD="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)"
 
 BIN="$(swift build --package-path "$ROOT" -c "$CONFIGURATION" --show-bin-path)"
@@ -26,21 +30,33 @@ if [ -d "$BIN/TouchBarUsage_TouchBarUsage.bundle" ]; then
   cp -R "$BIN/TouchBarUsage_TouchBarUsage.bundle" "$APP/Contents/Resources/"
 fi
 
-# Locally generated Clawd poses, if `make assets` has been run. GeneratedAssets/
-# is gitignored, so a clean checkout and CI simply ship without them and the app
-# falls back to its own placeholder mark.
-if [ -f "$ROOT/GeneratedAssets/Clawd/clawd-poses.json" ]; then
-  cp "$ROOT/GeneratedAssets/Clawd/clawd-poses.json" "$APP/Contents/Resources/clawd-poses.json"
-  echo "  included locally generated Clawd poses"
-else
-  echo "  no Clawd poses found (run 'make assets') — using fallback mark"
-fi
+# Locally resolved branded artwork — Clawd poses and any mascot override.
+#
+# These are for **local builds only**. Clawd is Anthropic's character and the
+# upstream pose library publishes no licence, so bundling it into an artifact
+# that is then handed to other people would be redistribution, which this project
+# does not do. The release packager therefore sets BUNDLE_BRANDED_ASSETS=0 and
+# ships the repository's own fallback mark instead.
+#
+# The Codex mark is unaffected: it is resolved at runtime from an OpenAI
+# application already installed on the user's own machine, so nothing is
+# redistributed either way.
+BUNDLE_BRANDED_ASSETS="${BUNDLE_BRANDED_ASSETS:-1}"
 
-# A developer's local mascot override takes precedence over Clawd.
-# LocalAssets/ is gitignored, so this never affects a clean checkout or CI.
-if [ -f "$ROOT/LocalAssets/claude-mascot.png" ]; then
-  cp "$ROOT/LocalAssets/claude-mascot.png" "$APP/Contents/Resources/claude-mascot.png"
-  echo "  included local mascot override"
+if [ "$BUNDLE_BRANDED_ASSETS" = "1" ]; then
+  if [ -f "$ROOT/GeneratedAssets/Clawd/clawd-poses.json" ]; then
+    cp "$ROOT/GeneratedAssets/Clawd/clawd-poses.json" "$APP/Contents/Resources/clawd-poses.json"
+    echo "  included locally generated Clawd poses (local build only)"
+  else
+    echo "  no Clawd poses found (run 'make assets') — using fallback mark"
+  fi
+
+  if [ -f "$ROOT/LocalAssets/claude-mascot.png" ]; then
+    cp "$ROOT/LocalAssets/claude-mascot.png" "$APP/Contents/Resources/claude-mascot.png"
+    echo "  included local mascot override (local build only)"
+  fi
+else
+  echo "  branded assets excluded — distributable build uses the fallback mark"
 fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -71,4 +87,9 @@ codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1 || {
   echo "warning: ad-hoc signing failed; the app may still run" >&2
 }
 
-echo "Built $APP"
+# Record what this bundle was built from. The packaging script refuses to ship a
+# Debug build, and comparing binaries directly does not work because the ad-hoc
+# signature above rewrites the copy.
+printf '%s\n' "$CONFIGURATION" > "$ROOT/dist/.build-configuration"
+
+echo "Built $APP ($CONFIGURATION, v$VERSION, build $BUILD)"
