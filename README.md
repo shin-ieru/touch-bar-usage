@@ -16,11 +16,18 @@ anything else.
 
 > **⚠️ Tradeoff you should know before installing.** On macOS 26 the only way to
 > keep a third-party widget on the Touch Bar is a system-modal bar that claims the
-> whole strip, so **the native volume, brightness and media controls are hidden
-> while the widget is shown.** Coexisting with them was the intended design, but
-> third-party Control Strip items are no longer rendered on this OS version —
-> the measurements are in [`docs/touchbar-research.md`](docs/touchbar-research.md).
-> The menu bar's **Touch Bar: On/Off** toggle restores the native bar instantly.
+> whole strip, so **Apple's native volume, brightness and media controls are
+> hidden while the widget is shown.**
+>
+> Coexisting with them was the intended design and was pursued hard: the Control
+> Strip tray item, present-then-minimise, and both `placement` values were each
+> tested on real hardware, in both Touch Bar presentation modes. None of them
+> shows the widget while keeping the native controls. The full matrix is in
+> [`docs/touchbar-research.md`](docs/touchbar-research.md).
+>
+> The menu bar's **Touch Bar: On/Off** toggle restores the native bar instantly,
+> with no relaunch. The app does **not** draw fake brightness or volume buttons —
+> imitating controls the OS already owns would be worse than yielding the bar.
 
 ## Project status
 
@@ -86,18 +93,23 @@ cluttering the compact bar.
 git clone <this-repo>
 cd touch-bar-usage
 
-make test    # 82 unit tests — no network, keychain, or Touch Bar needed
+make assets  # fetch Clawd pose data onto your machine (optional but recommended)
+make test    # 94 unit tests — no network, keychain, or Touch Bar needed
 make run     # builds dist/Touch Bar Usage.app and launches it
 ```
+
+`make assets` is what gets you Clawd. Skip it and the app still builds and runs,
+using its own placeholder mark instead — see [Mascot](#mascot).
 
 Other targets:
 
 ```bash
 make build     # compile
 make app       # assemble the .app bundle only
+make assets    # fetch Clawd pose data locally (gitignored output)
 make preview   # render PNG previews of every UI state to PreviewOutput/
-make audit     # scan tracked files for secrets and machine-specific paths
-make clean
+make audit     # scan tracked files for secrets, artwork and machine-specific paths
+make clean     # build products only; generated Clawd assets are kept
 ```
 
 On first launch macOS asks permission to read the Claude Code keychain item.
@@ -169,18 +181,43 @@ Consequences you should know about:
 Findings, including which symbols exist on macOS 26 and which do not, are in
 [`docs/touchbar-research.md`](docs/touchbar-research.md).
 
-## Mascot asset
+## Mascot
 
-The repository ships an **original placeholder mark** drawn in code — not
-Anthropic's artwork, whose redistribution terms have not been verified. To use
-your own image locally:
+Clawd rides along beside the numbers, and his pose follows your actual usage:
+
+```
+< 60% used     calm          85–94%      worried
+60–84%         alert         >= 95%      panic
+```
+
+The pose only ever reflects real usage — there is no demo mode, because a pose
+that did not match your quota would be misinformation. To see all four, run
+`make preview` and open `PreviewOutput/compact-*.png`.
+
+### Getting Clawd
+
+```bash
+make assets
+```
+
+**Clawd is Anthropic's character, and the upstream pose library publishes no
+licence — so this repository contains none of that artwork.** `make assets`
+fetches the pose data onto *your* machine and writes it to a gitignored
+directory; the project's own code stays MIT. The app never fetches at runtime.
+
+If you skip `make assets` (or it fails, or you are offline), the app falls back
+to an original placeholder mark drawn in code, so a clean checkout always builds
+and runs. Diagnostics shows which is active.
+
+### Using your own image instead
 
 ```bash
 cp your-image.png LocalAssets/claude-mascot.png
 make run
 ```
 
-`LocalAssets/` is gitignored, so it cannot be committed by accident. See
+`LocalAssets/` is gitignored too, so it cannot be committed by accident. Full
+rationale and the licensing rules for contributors are in
 [`docs/branding.md`](docs/branding.md).
 
 ## Troubleshooting

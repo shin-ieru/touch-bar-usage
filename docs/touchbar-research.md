@@ -1,7 +1,12 @@
 # System-wide Touch Bar research
 
 How this project puts a widget on the Touch Bar that survives application
-switching, what was actually verified, and what the tradeoffs are.
+switching, what was measured on real hardware, and where it falls short.
+
+Everything below was verified on **macOS 26.6.2 (25G83), arm64, MacBook Pro
+`Mac14,7`** with a physical Touch Bar. Where an earlier revision of this document
+drew a conclusion that later testing disproved, the correction is recorded rather
+than quietly edited away.
 
 ## The problem
 
@@ -17,78 +22,13 @@ as [MTMR](https://github.com/Toxblh/MTMR),
 [EnergyBar](https://github.com/billziss-gh/EnergyBar) and
 [claude-usage-touchbar](https://github.com/tpklo/claude-usage-touchbar) establish
 this pattern. No code was copied from them; the approach was re-implemented
-narrowly in [`SystemModalTouchBarBridge.swift`](../Sources/TouchBarUsage/TouchBar/SystemModalTouchBarBridge.swift),
+narrowly in
+[`SystemModalTouchBarBridge.swift`](../Sources/TouchBarUsage/TouchBar/SystemModalTouchBarBridge.swift),
 which is the only file in the project aware of any of this.
 
-## Approach: what was tried, and what actually works
+## Symbol availability
 
-Three presentations were implemented and tested **on the physical bar**, because
-the API return values turned out to be a poor guide to what is displayed.
-
-| Strategy | Registration | Actually displayed? |
-| --- | --- | --- |
-| `controlStripItem` — tray item beside native controls | succeeds | **no** |
-| `minimizedModal` — present modal, then minimise to tray | succeeds | **no** |
-| `persistentModal` — present modal, leave presented | succeeds | **yes** |
-
-### The Control Strip item does not render on macOS 26.6.2
-
-The preferred design — section 7 of the brief asks for coexistence with the
-native controls — is:
-
-```
-NSTouchBarItem.addSystemTrayItem(item)
-DFRElementSetControlStripPresenceForIdentifier(identifier, true)
-```
-
-Both calls succeed. The selectors resolve, no error is raised, and the app logs a
-successful install. **The item is never drawn.** This was checked with the
-Touch Bar set to:
-
-- `PresentationModeGlobal = fullControlStrip` (expanded Control Strip owns the
-  whole bar) — not displayed;
-- `PresentationModeGlobal = app` (app controls plus Control Strip) — not
-  displayed, and no expand chevron was available to reveal it.
-
-Presenting the modal and then calling `minimizeSystemModalTouchBar:` — the route
-that should collapse a modal bar back into its tray item — makes the widget
-disappear entirely rather than appearing beside the native controls, which is
-consistent with the tray item not being rendered at all.
-
-The conclusion is that third-party Control Strip items are no longer honoured on
-this macOS version. Both strategies are retained in the code behind
-`TBU_TOUCHBAR_STRATEGY` so they can be re-measured on a future release.
-
-### What ships: persistent system modal
-
-```
-NSTouchBar.presentSystemModalTouchBar(bar, placement: 1, systemTrayItemIdentifier: id)
-```
-
-The `placement` argument is undocumented. Measured behaviour:
-
-| Placement | Result |
-| --- | --- |
-| `0` | Native controls remain, **widget not displayed at all** |
-| `1` | Widget displayed, **claims the full strip** |
-
-There is no placement that shows the widget *and* keeps the native controls. The
-choice is binary: visible or invisible. `1` is therefore the default, since an
-invisible widget is not a product. Override with `TBU_TOUCHBAR_PLACEMENT`.
-
-### The tradeoff, stated plainly
-
-**While the widget is presented, the native volume, brightness and media controls
-are not visible.** This is not the outcome section 7 asks for, and it is not
-hidden behind optimistic wording: it is the least invasive presentation that
-actually works on macOS 26.6.2.
-
-The escape hatch is the menu bar's **Touch Bar: On/Off** toggle, which tears the
-modal down and returns the bar to normal immediately, with no relaunch.
-
-## Symbol availability — macOS 26.6.2, arm64
-
-Probed at runtime before any implementation work. Results:
+Probed at runtime before implementation.
 
 ### `DFRFoundation` — loaded successfully
 
@@ -100,16 +40,18 @@ Probed at runtime before any implementation work. Results:
 | `DFRFoundationPostEventWithMouseActivity` | found (not used) |
 | `DFRGetKeyboardIsPresent` | **missing** — do not rely on it |
 
-Touch Bar hardware presence is therefore detected by other means (the presence of
-`/usr/libexec/TouchBarServer`), not by `DFRGetKeyboardIsPresent`.
+Touch Bar hardware presence is therefore detected by the presence of
+`/usr/libexec/TouchBarServer`, not by `DFRGetKeyboardIsPresent`.
 
-### Private `NSTouchBar` class methods
+### Private `NSTouchBar` / `NSTouchBarItem` class methods
 
 | Selector | Result |
 | --- | --- |
 | `presentSystemModalTouchBar:placement:systemTrayItemIdentifier:` | **responds** |
 | `dismissSystemModalTouchBar:` | **responds** |
 | `minimizeSystemModalTouchBar:` | **responds** |
+| `addSystemTrayItem:` | **responds** |
+| `removeSystemTrayItem:` | **responds** |
 | `presentSystemModalFunctionBar:placement:systemTrayItemIdentifier:` | no |
 | `dismissSystemModalFunctionBar:` | no |
 
@@ -118,39 +60,117 @@ use the `…FunctionBar…` spelling, which was the name on macOS 10.12–10.13.
 macOS 26 only the `…TouchBar…` spelling exists. Code that probes only the
 `FunctionBar` names will silently conclude the feature is unavailable.
 
-### Private `NSTouchBarItem` class methods
+## Two defects that made working configurations look broken
 
-| Selector | Result |
+Both produced the same symptom — a widget that registers successfully, logs
+success, and is never drawn — so they are worth knowing before concluding that an
+API "does not work".
+
+### 1. A non-nil `systemTrayItemIdentifier` with `placement: 0`
+
+The first implementation always passed the app's own identifier:
+
+```swift
+fn(NSTouchBar.self, sel, bar, placement, identifier.rawValue as NSString)   // wrong
+```
+
+Supplying an identifier binds the modal bar to a **Control Strip tray item**, and
+third-party tray items are not rendered on macOS 26 (see below) — so the widget
+vanished. The typed function pointer must declare the parameter as optional so
+nil can actually be passed:
+
+```swift
+typealias PresentSystemModal =
+    @convention(c) (AnyObject, Selector, NSTouchBar, Int, NSString?) -> Void
+fn(NSTouchBar.self, sel, bar, placement.rawValue, nil)                      // right
+```
+
+Fixing this changed observed behaviour: the native controls stopped being
+displaced at `placement: 0`.
+
+### 2. An Auto Layout-only item view collapses to zero width
+
+A view installed in a Touch Bar item must carry a **concrete frame**. A view that
+only has Auto Layout constraints and an `intrinsicContentSize` collapses and is
+never drawn — again with no error anywhere. The reference implementation sets an
+explicit `NSMakeRect(0, 0, 600, 30)` for this reason; this project wraps the
+widget in `CompactSurfaceView`, a fixed-size surface with the content pinned to
+its leading edge.
+
+This defect invalidated the first round of Control Strip tray-item testing, which
+is why those tests were re-run with a properly framed view before any conclusion
+was drawn.
+
+## Measured behaviour
+
+### Control Strip tray item — does not render
+
+```
+NSTouchBarItem.addSystemTrayItem(item)
+DFRElementSetControlStripPresenceForIdentifier(identifier, true)
+```
+
+Both calls succeed. Tested with a **concrete-frame** view in both Touch Bar
+presentation modes:
+
+| `PresentationModeGlobal` | Result |
 | --- | --- |
-| `addSystemTrayItem:` | **responds** |
-| `removeSystemTrayItem:` | **responds** |
+| `fullControlStrip` | not drawn |
+| `app` | not drawn |
 
-## How the bridge fails safely
+Presenting the modal bar and then calling `minimizeSystemModalTouchBar:` — the
+route that should collapse a modal bar into its tray item — makes the widget
+disappear entirely rather than appearing beside the native controls, which is
+consistent with the tray item not being rendered at all.
 
-Every symbol is resolved dynamically — `dlsym` for the C functions,
-`class_getClassMethod` for the selectors — and cached in `static let`s. If any
-required piece is missing, `SystemModalTouchBarBridge.isSupported` is `false`,
-the app skips Touch Bar installation entirely, runs as a menu-bar utility, and
-Diagnostics reports which specific piece was unavailable. Nothing force-unwraps a
-private symbol, so a future macOS release that removes one degrades the app
-rather than crashing it.
+**Conclusion: third-party Control Strip items are not honoured on macOS 26.6.2.**
+The code path remains, behind `TBU_TOUCHBAR_STRATEGY=controlStripItem`, so it can
+be re-measured on a future release.
 
-Multi-argument private calls go through typed `@convention(c)` function pointers
-obtained from `method_getImplementation`, because Swift's `perform(_:with:)` only
-handles up to two object arguments and cannot pass the `NSInteger` placement.
+### System-modal bar — renders, but always full width
 
-## Cleanup
+```
+NSTouchBar.presentSystemModalTouchBar(bar, placement: N, systemTrayItemIdentifier: nil)
+```
 
-`teardown()` runs from `applicationWillTerminate` and from `SIGINT`/`SIGTERM`
-handlers, and:
+With a nil identifier and a concrete-frame view:
 
-1. dismisses the modal bar if presented;
-2. clears Control Strip presence for the identifier;
-3. calls `removeSystemTrayItem:`.
+| `PresentationModeGlobal` | `placement: 0` | `placement: 1` |
+| --- | --- | --- |
+| `fullControlStrip` | **not drawn** (native controls kept) | drawn, **covers the bar** |
+| `app` | drawn, **covers the native controls** | drawn, **covers the bar** |
 
-It is idempotent, so termination paths that overlap cannot double-remove. This is
-what prevents a stale or duplicated widget after a development rebuild-and-relaunch
-cycle.
+There is no combination that draws the widget *and* keeps Apple's controls. A
+system-modal touch bar is inherently a full-strip presentation on this OS
+version; `placement` affects whether it is drawn in a given mode, not how much
+width it claims.
+
+`placement: 1` is the shipped default because it is the only value that draws in
+every presentation mode.
+
+### Divergence from the reference implementation
+
+[claude-usage-touchbar](https://github.com/tpklo/claude-usage-touchbar) documents
+`placement 0 shares the bar with the Control Strip; placement 1 covers it`, and
+uses `placement: 0` with a nil identifier and a 600×30 view — the exact
+configuration tested above. **That coexistence did not reproduce on macOS
+26.6.2.** The likely explanation is an OS behaviour change since that project was
+written; it is recorded here so the next person does not assume our
+implementation is simply wrong.
+
+## The tradeoff, stated plainly
+
+**While the widget is presented, Apple's native volume, brightness, mute and
+media controls are not visible.** This is not the outcome the project wanted, and
+it is not hidden behind optimistic wording.
+
+Mitigations actually available:
+
+- the menu bar's **Touch Bar: On/Off** toggle tears the presentation down
+  immediately and returns the bar to normal, with no relaunch;
+- native controls are not *reimplemented* — drawing fake brightness and volume
+  buttons was explicitly rejected, because they would be a worse imitation of
+  controls the OS already owns.
 
 ## Touch input
 
@@ -163,48 +183,52 @@ Touch Bar routes touches to natively. This is why
 [`ClaudeCompactView`](../Sources/TouchBarUsage/TouchBar/ClaudeCompactView.swift)
 subclasses `NSButton` rather than `NSView`.
 
-## Template images
+## Image rendering
 
 An `NSImage` built with `lockFocus()` and a `.clear` compositing punch-out
 rendered correctly off-device but did **not** display as a template image on the
-physical bar. Rebuilding it with `NSImage(size:flipped:drawingHandler:)` and an
-even-odd fill — so the face features are punched out of a single path rather than
-composited away — fixed it. Off-device PNG previews are not sufficient to
-validate Touch Bar image rendering.
+physical bar. Rebuilding it with `NSImage(size:flipped:drawingHandler:)` fixed
+it. Off-device PNG previews are not sufficient to validate Touch Bar image
+rendering.
 
-## Verified behaviour
+Clawd is drawn cell-by-cell as whole-number rectangles with anti-aliasing and
+interpolation disabled, so the pixel art stays sharp. Colours come from the
+generated pose file; without them the image falls back to a tinted template.
 
-Verified on macOS 26.6.2 (`Mac14,7`), programmatically and by direct observation
-of the physical bar:
+## Escape key
 
-- all required symbols resolve;
-- the widget is displayed via the persistent modal strategy;
-- **it persists across application switching** — the core requirement;
-- tapping it opens the detail view, and "Done" returns to the compact widget;
-- termination removes the presentation cleanly
-  (`control strip item removed` / `terminated cleanly` are logged on SIGTERM);
-- relaunch produces no duplicate presentation;
-- the app runs as a background `.accessory` application with no Dock icon;
-- idle cost: **0.0% CPU, ~10–12 MB RSS**.
+The target Mac has a physical Escape key, so **no synthetic Escape item is
+injected** and no Accessibility permission is requested. `make audit` enforces
+both: it fails if `escapeKeyReplacementItemIdentifier` or any Accessibility /
+Screen Recording / Input Monitoring API appears in tracked sources.
 
-Full results, including what remains unverified, are in
-[`manual-test-results.md`](manual-test-results.md).
+## Measured usable width
 
-## Tradeoffs and limitations
+With the modal bar claiming the full strip, the custom surface is set to 420 pt
+(`CompactSurfaceView.surfaceWidth`), with the widget itself capped at 300 pt and
+degrading by dropping the "Claude" prefix before it will truncate a percentage.
+At the shipped 13 pt monospaced-digit font, `Clawd  Claude  5h 72%  W 43%`
+measures comfortably inside that budget, so the full form is what renders; the
+condensed form exists for narrower future layouts (two providers, for example).
 
+## Cleanup
+
+`dismiss()` runs from `applicationWillTerminate` and from `SIGINT`/`SIGTERM`
+handlers, and dismisses the detail bar, dismisses the compact bar, clears Control
+Strip presence, and removes the tray item if one was registered. It is
+idempotent, so overlapping termination paths cannot double-remove. This is what
+prevents a stale or duplicated widget after a rebuild-and-relaunch cycle —
+verified across roughly twenty cycles during this work.
+
+## Limitations
+
+- **Native controls are displaced while the widget is shown.** No configuration
+  on macOS 26.6.2 avoids this.
 - **Mac App Store distribution is not possible.** Private API use disqualifies
-  the app, which is why the roadmap targets direct distribution only.
-- **Any macOS update may break this.** The bridge degrades rather than crashes,
-  but a future release could remove the Control Strip mechanism outright.
-- **Native controls are displaced while the widget is shown.** See the tradeoff
-  section above. The menu bar toggle turns the presentation off on demand.
-- **Third-party Control Strip items are not rendered on macOS 26.6.2**, so the
-  coexistence design is currently unreachable. The code for it remains.
-- **Width is finite.** The widget caps itself at 300 pt and drops the "Claude"
-  prefix before it would ever truncate a percentage.
-- **No extra permissions are required.** The app requests no Accessibility, Screen
-  Recording, Input Monitoring, Full Disk Access, or Automation permission. The
-  only user-facing prompt is the standard keychain access prompt for the single
-  Claude Code credential item.
-- The target Mac has a physical Escape key, so no synthetic Escape item is added;
-  the detail view provides an explicit "Done" button to return to compact mode.
+  the app, and the App Sandbox is incompatible with these APIs.
+- **Any macOS update may break this.** Every symbol is resolved dynamically, so a
+  removed API degrades to `isSupported == false` and a menu-bar-only app rather
+  than a crash. Diagnostics reports which specific piece was unavailable.
+- **No extra permissions are required.** No Accessibility, Screen Recording,
+  Input Monitoring, Full Disk Access, or Automation. The only user-facing prompt
+  is the standard keychain prompt for the single Claude Code credential item.

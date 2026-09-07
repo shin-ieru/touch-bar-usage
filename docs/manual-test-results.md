@@ -63,28 +63,48 @@ Performed by direct observation on the target Mac, macOS 26.6.2.
 | 9 | No flicker loop, no runaway CPU | **pass** — 0.0% CPU idle |
 | 10 | Native volume/brightness/media coexist | **FAIL** — see below |
 
+| 11 | Clawd renders on the bar, in colour | **pass** |
+| 12 | Clawd pose follows usage severity | **pass** by construction; only `calm` observed live (real usage was 26% / 15%) |
+
 ### Check 10 — native controls are displaced
 
-This is a genuine failure against section 7's preference, not a partial pass.
+**This remains a genuine failure against the requirement, not a partial pass.**
 
-Three strategies were implemented and tested on the physical bar:
+A second, more thorough round of testing was done specifically to fix it. Two
+real defects were found and corrected along the way — a non-nil
+`systemTrayItemIdentifier` and an Auto Layout-only item view, either of which
+makes a working API look broken — and every configuration was then re-tested with
+both fixes in place:
 
-| Strategy | Displayed? | Native controls kept? |
+| Mechanism | Displayed? | Native controls kept? |
 | --- | --- | --- |
-| Control Strip tray item | no | — |
-| Present modal then minimise | no | — |
-| Persistent modal, placement `0` | no | yes |
-| Persistent modal, placement `1` | **yes** | **no** |
+| Control Strip tray item, `fullControlStrip` mode | no | — |
+| Control Strip tray item, `app` mode | no | — |
+| Present modal then `minimizeSystemModalTouchBar:` | no | — |
+| Modal, `placement 0`, `fullControlStrip` mode | no | yes |
+| Modal, `placement 0`, `app` mode | **yes** | **no** |
+| Modal, `placement 1`, either mode | **yes** | **no** |
 
 There is no configuration on macOS 26.6.2 that shows the widget *and* keeps the
-native controls. Third-party Control Strip items register successfully but are
-never drawn, in either Touch Bar presentation mode. Full measurements are in
-[`touchbar-research.md`](touchbar-research.md).
+native controls: a system-modal bar is inherently full-width on this OS version,
+and third-party Control Strip items are not rendered at all. Notably the exact
+configuration the reference implementation documents as coexisting
+(`placement: 0`, nil identifier, fixed-size view) **did not reproduce here** —
+see [`touchbar-research.md`](touchbar-research.md) for the full analysis.
 
-The shipped behaviour is the only one that displays. The menu bar's
-**Touch Bar: On/Off** toggle restores the native bar instantly when needed.
+Shipped behaviour is `placement 1`, the only value that draws in every mode. The
+menu bar's **Touch Bar: On/Off** toggle restores the native bar instantly. Fake
+brightness/volume buttons were explicitly rejected rather than drawn.
+
+### The user's Touch Bar setting
+
+`PresentationModeGlobal` was temporarily switched to `app` during testing, with
+permission, and **restored to the original `fullControlStrip`** afterwards. The
+app works in either mode and reports the current one in Diagnostics.
 
 ### Not yet exercised
+
+Stated plainly rather than assumed to pass:
 
 | Check | Status |
 | --- | --- |
@@ -92,6 +112,9 @@ The shipped behaviour is the only one that displays. The menu bar's
 | Manual refresh from the menu updating on-bar values | not verified |
 | Wake-from-sleep refresh | not verified |
 | Launch at Login registration from `/Applications` | not verified |
+| Expanding / collapsing Apple's Control Strip alongside the widget | **not applicable** — the modal bar claims the full strip, so there is no native Control Strip on screen to expand while the widget is shown |
+| Adjusting brightness / volume / mute with the widget shown | **not possible** — see check 10 |
+| Clawd `alert` / `worried` / `panic` poses on the physical bar | not observed live; real usage stayed in the `calm` band. Verified via `make preview` renders instead |
 
 ### How to run these
 
@@ -124,13 +147,26 @@ were invisible to the preview path:
 - a custom `NSView` in a Touch Bar item receives no touch events at all, so the
   widget rendered correctly but was inert until it became an `NSButton`;
 - an `NSImage` built with `lockFocus` and `.clear` compositing rendered fine
-  off-device but did not display as a template image on the bar.
+  off-device but did not display as a template image on the bar;
+- an Auto Layout-only item view previews correctly but collapses to zero width on
+  the bar, which for a while made a *working* API look broken.
+
+The four Clawd poses were verified through this path (`compact-normal`,
+`-elevated`, `-warning`, `-critical`), since live usage never left the `calm`
+band.
 
 ## Known open items
 
-- The shipped mascot is the project's original placeholder, not Claude's actual
-  character. This is deliberate — see [`branding.md`](branding.md) — but it is
-  not what a user expects to see, and remains open.
-- Native Touch Bar controls are displaced while the widget is shown (check 10).
+- **Native Touch Bar controls are displaced while the widget is shown** (check
+  10). This is the significant open item. It is an OS-level constraint on macOS
+  26.6.2, not a configuration mistake — but it is a real cost to the user, and
+  the menu toggle is a workaround rather than a fix.
 - A side-by-side comparison with Claude Code's interactive `/usage` has not been
-  performed.
+  performed. Values come from the same OAuth endpoint Claude Code's own session
+  uses and are parsed structurally, but the comparison itself remains unrun.
+- Clawd's non-`calm` poses have not been seen on the physical bar, only in
+  rendered previews, because live usage stayed below 60%.
+
+**Resolved since the first pass:** the mascot is now Clawd rather than the
+generic placeholder, fetched locally by `make assets` and rendered in his own
+colours. The placeholder remains as the offline/no-Node fallback.
