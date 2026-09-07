@@ -23,6 +23,13 @@ final class TouchBarController: NSObject {
     /// Called when the user taps the widget, so the app can refresh opportunistically.
     var onDetailShown: (() -> Void)?
 
+    /// Apple's Control Strip item would be the coexisting path, but it does not
+    /// render on macOS 26.6.2 (see docs/touchbar-research.md). Opt in with
+    /// `TBU_TOUCHBAR_STRATEGY=controlStripItem` to re-measure on a future release.
+    static var usesControlStripItem: Bool {
+        ProcessInfo.processInfo.environment["TBU_TOUCHBAR_STRATEGY"] == "controlStripItem"
+    }
+
     private static let itemIdentifier = "com.gabrielanyog.touchbarusage.claude"
     private static let detailItemIdentifier = NSTouchBarItem.Identifier("com.gabrielanyog.touchbarusage.claude.detail")
 
@@ -32,6 +39,7 @@ final class TouchBarController: NSObject {
         bridge = SystemModalTouchBarBridge(identifier: Self.itemIdentifier)
         super.init()
     }
+
 
     /// Installs the Control Strip item. Returns false when private API is missing,
     /// in which case the app stays menu-bar-only rather than showing a broken bar.
@@ -44,13 +52,18 @@ final class TouchBarController: NSObject {
         let view = ClaudeCompactView(viewModel: TouchBarViewModel.make(state: state))
         view.onTap = { [weak self] in self?.showDetail() }
         compactView = view
-        return bridge.present(view: view)
+        let surface = CompactSurfaceView(hosting: view)
+        // Prefer Apple's own coexistence mechanism; fall back to the modal bar.
+        if Self.usesControlStripItem, bridge.presentControlStripItem(view: surface) {
+            return true
+        }
+        return bridge.presentAlongsideControlStrip(view: surface)
     }
 
     func update(state: ProviderState) {
         self.state = state
         compactView?.apply(TouchBarViewModel.make(state: state))
-        if bridge.isPresentingModal {
+        if bridge.isPresentingDetail {
             refreshDetail()
         }
     }
@@ -62,19 +75,18 @@ final class TouchBarController: NSObject {
         bar.delegate = self
         bar.defaultItemIdentifiers = [Self.detailItemIdentifier]
         detailBar = bar
-        bridge.presentModal(bar)
+        bridge.presentDetail(bar)
         startDetailTimer()
         onDetailShown?()
     }
 
     private func hideDetail() {
         stopDetailTimer()
-        bridge.dismissModal()
+        // Dismissing the detail bar also re-presents the compact widget beside
+        // the Control Strip; the bridge owns that sequencing.
+        bridge.dismissDetail()
         detailBar = nil
         detailView = nil
-        // Under the persistent-modal strategy the compact widget *is* a modal
-        // bar, so dismissing the detail bar would otherwise leave nothing.
-        bridge.restoreCompactPresentation()
     }
 
     private func refreshDetail() {
@@ -112,6 +124,37 @@ final class TouchBarController: NSObject {
 
     var diagnostics: [DiagnosticEntry] {
         SystemModalTouchBarBridge.availabilityReport
+    }
+}
+
+/// Fixed-size surface hosting the compact widget.
+///
+/// A system-modal bar presented at `placement: 0` needs its item view to carry a
+/// concrete frame — an Auto Layout-only view collapses and is never drawn. The
+/// surface is sized explicitly and the widget is pinned to its leading edge, so
+/// Apple's Control Strip keeps the right-hand side of the bar.
+final class CompactSurfaceView: NSView {
+    /// Width of the custom region. Wide enough for the widget plus headroom,
+    /// while leaving the Control Strip its own space on the right.
+    static let surfaceWidth: CGFloat = 420
+    static let surfaceHeight: CGFloat = 30
+
+    init(hosting content: NSView) {
+        super.init(frame: NSRect(x: 0, y: 0,
+                                 width: Self.surfaceWidth, height: Self.surfaceHeight))
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.centerYAnchor.constraint(equalTo: centerYAnchor),
+            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: Self.surfaceWidth, height: Self.surfaceHeight)
     }
 }
 
