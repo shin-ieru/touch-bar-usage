@@ -8,46 +8,56 @@ and per-app controls all behave exactly as they always have. Open the usage
 dashboard when you want it, and it gets out of the way again.
 
 ```
-Normal (resting)   ── macOS owns the Touch Bar, nothing displaced ──
+Normal (resting)   ── native Touch Bar, plus one small badge ──
+                                                      [🯅◍]  ← tap this
 
 Usage mode         ┌──────────────────────────────────────────────────────┐
 (on demand)        │ [Clawd] Claude 5h72 W43   [◍] Codex 5h84 W51  [Close]│
                    └──────────────────────────────────────────────────────┘
 ```
 
-Tap a provider for its detail page; close it, or leave it ~12 seconds, and macOS
-gets its Touch Bar straight back.
+At rest, a compact **Claude + Codex badge** sits in the Control Strip alongside
+brightness and volume. Tap it for the dashboard; tap a provider for its detail
+page; close it, or leave it ~12 seconds, and macOS gets its Touch Bar straight
+back.
 
 > **Why on demand?** On macOS 26 a third-party Touch Bar surface is inherently
-> full-width, and third-party Control Strip items are not rendered at all. Keeping
-> a dashboard permanently visible therefore means permanently displacing Apple's
-> controls — a real cost paid all day for information glanced at occasionally.
-> So the dashboard is deliberately temporary. The measurements behind that
-> decision are in [`docs/touchbar-research.md`](docs/touchbar-research.md).
+> full-width. Keeping a dashboard permanently visible would mean permanently
+> displacing Apple's controls — a real cost paid all day for information glanced
+> at occasionally. So the badge stays, and the dashboard is deliberately
+> temporary. Measurements in [`docs/touchbar-research.md`](docs/touchbar-research.md).
 
 ## Project status
 
 **Phase 2 — early development.** Claude Code and OpenAI Codex are both supported.
 
-Verified on physical Touch Bar hardware: the native bar is preserved, the
-dashboard opens and closes cleanly, both providers render with their own icons,
-detail pages work, and auto-dismiss restores the native bar.
+Verified on physical Touch Bar hardware: the combined badge sits in the Control
+Strip and opens the dashboard, the native bar is preserved, both providers render
+with their own marks, detail pages work, and Close and auto-dismiss both restore
+the native bar.
 
 Known limitations are recorded honestly in
 [`docs/manual-test-results.md`](docs/manual-test-results.md) — in particular that
-the Touch Bar entry point had to move to the menu bar.
+the badge requires one specific Touch Bar setting.
 
 ## How you use it
 
-1. The app lives in the **menu bar** (a small gauge icon, next to the clock). Its
-   icon shows the worst severity across both providers, so a provider hitting its
-   limit is visible without opening anything.
-2. Choose **Show Usage on Touch Bar** (or press ⌘U with the menu open).
-3. The dashboard appears on the Touch Bar. Tap **Claude** or **Codex** for detail.
-4. **Close**, or wait ~12 seconds — macOS gets its Touch Bar back.
+1. A small **Claude + Codex badge** sits in the Touch Bar's Control Strip. It
+   gains a `!` at 85% and `!!` at 95%, so a provider nearing its limit is visible
+   without opening anything.
+2. Tap it. The dashboard appears; tap **Claude** or **Codex** for detail.
+3. **Close**, or wait ~12 seconds — macOS gets its Touch Bar back.
 
-The menu itself also lists both providers' figures, so you never *have* to use the
-Touch Bar at all.
+### Touch Bar setting
+
+The badge requires **System Settings → Keyboard → Touch Bar shows → App
+Controls**, with **Show Control Strip** enabled. In other modes macOS does not
+draw third-party Control Strip items at all.
+
+If you'd rather not change that setting, everything still works from the **menu
+bar** (a gauge icon next to the clock): it lists both providers' figures and has
+**Show Usage on Touch Bar**, which opens the same dashboard. That route works in
+every Touch Bar mode.
 
 ## What it displays
 

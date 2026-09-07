@@ -189,30 +189,89 @@ Native controls are **not reimplemented**. Drawing fake brightness and volume
 buttons was explicitly rejected: they would be a worse imitation of controls the
 OS already owns, and they would be wrong the moment Apple changed anything.
 
-## The Control Strip entry point does not render
+## The Control Strip entry point — it works, in one specific mode
 
-The intended entry point was a small persistent Control Strip item — "AI" plus a
-severity glyph — so usage mode could be opened from the Touch Bar itself.
+**Correction.** An earlier revision of this document concluded that third-party
+Control Strip items "are not rendered on macOS 26.6.2". That was wrong, and the
+error is worth recording because it was a sampling failure, not a measurement
+failure: the conclusion was drawn from two presentation modes without testing the
+third.
 
-**It does not render on macOS 26.6.2.** `addSystemTrayItem:` and
-`DFRElementSetControlStripPresenceForIdentifier` both succeed, the app logs a
-successful install, and nothing is drawn. This has now been tested across two
-phases with:
+The tray item **does** render, with `Touch Bar shows` set to
+**`appWithControlStrip`** (App Controls *with* the Control Strip shown):
 
-- an Auto Layout-only view (collapses — a genuine bug, since fixed);
-- a concrete-frame view at 200 pt;
-- a concrete-frame view at **64 pt**, sized for the narrow slot;
-- both `fullControlStrip` and `app` presentation modes;
-- present-then-`minimizeSystemModalTouchBar:`, which collapses to nothing.
+| `PresentationModeGlobal` | Tray item rendered? |
+| --- | --- |
+| `fullControlStrip` | no |
+| `app` | no |
+| **`appWithControlStrip`** | **yes** |
 
-The code path remains behind `TBU_TOUCHBAR_STRATEGY=controlStripItem` so it can
-be re-measured on a future release.
+Verified on hardware: the item appears in the compact Control Strip, is
+tappable, opens the expanded dashboard, and survives quit and relaunch without
+duplicating.
 
-**Consequence:** the menu bar is the entry point. That was always specified as
-the fallback, and it is now the primary route. To compensate for the lost
-at-a-glance signal, the menu bar icon itself reflects the worst severity across
-providers and appends `!` / `!!` — so a provider hitting its limit is visible
-without opening anything.
+This is the shipped interaction model:
+
+1. **Normal** — macOS owns the Touch Bar; we contribute one small badge.
+2. **Usage mode** — tap the badge for the full Claude + Codex dashboard.
+3. Close or auto-dismiss returns the bar to macOS.
+
+### Requirement
+
+The tray badge needs **System Settings → Keyboard → Touch Bar shows → App
+Controls**, with **Show Control Strip** enabled. In other modes the item is not
+drawn, and the menu bar's "Show Usage on Touch Bar" is the way in. The menu bar
+route works in every mode and is kept for exactly that reason.
+
+The two earlier failures were real for their modes, so
+`TBU_TOUCHBAR_STRATEGY=controlStripItem` and the placement override remain for
+re-measuring on future releases.
+
+### What still holds from the earlier testing
+
+The two defects found along the way were genuine and their fixes stand: an Auto
+Layout-only item view collapses to zero width and is never drawn, and a non-nil
+`systemTrayItemIdentifier` binds a modal bar to a tray item. Both produce exactly
+the same symptom as an unsupported API — a successful call and nothing on screen
+— which is what made the wrong conclusion so easy to reach.
+
+**Lesson for this codebase:** a private Touch Bar API returning success proves
+nothing. Only the physical bar does, and it must be checked across presentation
+modes before concluding anything is unsupported.
+
+## The compact tray badge
+
+The badge is a combined Claude + Codex mark rather than generic text, so the
+entry point says *which* providers it covers.
+
+- **Left:** Clawd's face. The full sprite is unreadable at tray size, so
+  `ClawdPoseSet.headBoundingBox` crops to the face — top of the creature down to
+  just below the eyes, with width taken from the **top row only** (measuring
+  across lower rows includes the arms and yields a stepped anvil shape).
+- **Right:** the Codex blossom.
+- Both are drawn as alpha silhouettes and composed into a single **template**
+  image, so the badge tints with the bar. Clawd's eyes are punched out as
+  transparency rather than filled with their own near-black colour — filling them
+  would flatten into the silhouette and produce a featureless blob.
+
+### Sizing
+
+The Control Strip slot has a fixed width that does not grow. A first attempt
+sized Clawd generously and **pushed the blossom off the right edge on hardware**;
+the badge is now capped at 44 pt of artwork (56 pt button) and the composite is
+uniformly scaled down if it ever exceeds that.
+
+### Fallback order
+
+1. `LocalAssets/combined-tray-badge.png` — a developer's own badge;
+2. composed Clawd + blossom, both resolved from installed software;
+3. the repository's own drawn badge — a simple face beside a six-petal rosette,
+   original artwork, what a clean checkout ships;
+4. text, only if even that fails — which in practice it cannot, since it is drawn
+   in code.
+
+Tier 3 exists so the graphic path is *always* available; text is never the
+default. `TrayBadgeResolution` holds the ordering and is unit tested.
 
 ## Touch input
 

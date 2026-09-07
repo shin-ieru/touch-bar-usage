@@ -46,6 +46,56 @@ structurally — no screen scraping, no OCR.
 > `/usage` output at the same moment has **not** been performed. Run `/usage` in
 > Claude Code and compare against the menu-bar figures to close this out.
 
+## Combined tray badge patch (macOS 26.6.2)
+
+### The Phase 2 conclusion was wrong, and this corrects it
+
+Phase 2 recorded that third-party Control Strip items "are not rendered on
+macOS 26.6.2". **They are** — with `Touch Bar shows` set to
+`appWithControlStrip`, which was the one presentation mode never tested. The
+earlier `fullControlStrip` and `app` results were accurate for those modes; the
+generalisation from them was not.
+
+| Check | Result |
+| --- | --- |
+| Tray item renders in `appWithControlStrip` | **pass** — confirmed on hardware |
+| Tray item is tappable and opens the dashboard | **pass** |
+| Tray item renders in `fullControlStrip` / `app` | fail — unchanged from Phase 2 |
+
+### Badge
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | Badge visible in the compact Control Strip | **pass** |
+| 2 | Reads as Claude + Codex, both marks legible | **pass** |
+| 3 | Not blurry | **pass** — pixel art drawn at whole-cell sizes, interpolation off |
+| 4 | No dark-square or blob artifact | **pass** — Clawd's eyes punched out as transparency |
+| 5 | Nothing clipped | **pass** — after the fix below |
+| 6 | Tapping the badge opens the dashboard | **pass** |
+| 7 | Close restores the native Touch Bar | **pass** |
+| 8 | Auto-dismiss restores the native Touch Bar | **pass** |
+| 9 | Badge still present after dismissal | **pass** |
+| 10 | Quit and relaunch leaves no duplicate | **pass** |
+
+### Defect found on hardware
+
+The first attempt sized Clawd's face generously, producing a 71 pt button. The
+Control Strip slot does not grow to fit, so **the Codex blossom was clipped off
+the right edge** — visible only on the device; the off-device preview renders the
+button at its requested size and showed both marks fine.
+
+Fixed by shrinking the marks to a 56 pt button and adding a hard 44 pt cap on
+artwork width, which uniformly scales the composite down rather than letting
+either mark run off the edge.
+
+### Not verified
+
+| Check | Status |
+| --- | --- |
+| Fallback badge (tier 3) on hardware | not verified — the composed badge resolved, so the drawn fallback never rendered on the bar. Covered by unit tests and off-device previews |
+| Local override badge (tier 1) on hardware | not verified — no `LocalAssets/combined-tray-badge.png` on this machine |
+| Badge appearance on a non-OLED / older Touch Bar | not applicable to this hardware |
+
 ## Phase 2 — revised architecture (macOS 26.6.2)
 
 The Touch Bar model changed in Phase 2: macOS keeps its own Touch Bar as the
@@ -57,7 +107,7 @@ checks for that architecture, performed by direct observation on the target Mac.
 | 1 | Native Touch Bar behaviour preserved at rest | **pass** |
 | 2 | Brightness and volume work normally | **pass** |
 | 3 | Native bar survives switching Finder/Safari/Terminal/Xcode | **pass** |
-| 4 | Small Control Strip tray entry point | **FAIL** — not rendered; see below |
+| 4 | Small Control Strip tray entry point | **FAIL at the time** in `fullControlStrip` / `app` — later **passed** in `appWithControlStrip`; see the badge section above |
 | 5 | Usage mode opens from the menu bar | **pass** |
 | 6 | Both providers visible and fit, nothing clipped | **pass** |
 | 7 | Clawd renders on the Claude chip | **pass** |

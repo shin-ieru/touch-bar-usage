@@ -53,6 +53,62 @@ generator runs them inside a Node `vm` context whose only global is a bare
 `window` object — no `require`, no `process`, no filesystem access — so
 build-time evaluation of third-party code cannot reach the rest of your machine.
 
+## The compact tray badge
+
+The Touch Bar entry point uses a **combined Claude + Codex mark** — Clawd's face
+beside the Codex blossom — so it reads as "these two providers" rather than a
+generic label.
+
+It has its own pipeline (`CombinedTrayBadgeResolver`) rather than reusing the
+dashboard artwork, because the slot is roughly 56 pt wide and the full-size marks
+do not survive being shrunk into it.
+
+### Resolution order
+
+| Tier | Source | Committed? |
+| --- | --- | --- |
+| 1 | `LocalAssets/combined-tray-badge.png` | no — gitignored |
+| 2 | composed: Clawd's face + Codex blossom, resolved locally | no — nothing committed |
+| 3 | the repository's own drawn badge | **yes** — original artwork |
+| 4 | text (`AI`) | n/a — last resort only |
+
+Tier 3 is a simple two-eyed face beside a six-petal rosette, drawn in code. It
+gestures at "a character and a flower" without imitating either company's mark,
+so it is safe to ship publicly — and because it is drawn rather than loaded, the
+graphic path can never fail. **A clean checkout ships tier 3 and nothing else.**
+
+### Reproducing tiers 1 and 2
+
+Tier 2 needs no extra step beyond what the mascots already require:
+
+```bash
+make assets    # Clawd poses (gitignored)
+make run
+```
+
+The Codex blossom is read from an OpenAI editor extension already installed on
+the machine; nothing is downloaded. If either source is missing, the badge falls
+back to tier 3 automatically.
+
+For tier 1, drop your own composed badge at
+`LocalAssets/combined-tray-badge.png`. It is used as authored — not templated —
+so a full-colour badge keeps its colours. Aim for roughly 44×22 pt (88×44 px at
+2×); wider images are scaled down to fit the slot.
+
+Diagnostics reports which tier is active as `Tray badge: …`.
+
+### Rendering notes
+
+Both composed marks are alpha silhouettes combined into one **template** image,
+which tints to the bar. Two failure modes to avoid, both hit during development:
+
+- **Opaque sources become solid blocks.** Clawd's eyes are punched out as
+  transparency rather than filled with their own near-black colour; filling them
+  flattens into the silhouette. The same trap once made the Codex mark render as a
+  black square when the opaque PNG tile was templated.
+- **The slot does not grow.** Artwork is capped at 44 pt wide and scaled down if
+  it exceeds that, after an earlier version pushed the blossom off the edge.
+
 ## Mascot resolution order
 
 1. `LocalAssets/claude-mascot.png` — your own image, if present (gitignored);
