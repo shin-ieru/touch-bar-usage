@@ -1,0 +1,7 @@
+Current session
+[38;5;208m█████████░░░░░░░░░░░[0m 45% used
+Resets 2:00pm
+
+Current week (all models)
+[32m████░░░░░░░░░░░░░░░░[0m 18% used
+Resets Tue Sep 9

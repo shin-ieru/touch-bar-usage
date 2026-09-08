@@ -1,0 +1,13 @@
+╭──────────────────────────────╮
+│ Current session              │
+│ ▓▓▓▓▓▓▒▒▒▒▒▒▒▒  35% used     │
+│ Resets 2:00pm                │
+│                              │
+│ Current week (all models)    │
+│ ▓▓▒▒▒▒▒▒▒▒▒▒▒▒  12% used     │
+│ Resets Tue Sep 9             │
+│                              │
+│ Current week (Opus)          │
+│ ▓▒▒▒▒▒▒▒▒▒▒▒▒▒   5% used     │
+│ Resets Tue Sep 9             │
+╰──────────────────────────────╯
