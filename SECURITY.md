@@ -22,6 +22,20 @@ touches authentication.
 | Server error text cannot leak account details | messages are truncated to one 80-char line; stderr is drained but never logged |
 | No orphan child process | explicit shutdown on termination, verified on hardware |
 
+## Claude: two sources, one authority
+
+1. Read-only OAuth usage fast path, when the credential is readable.
+2. If it is not, ask `claude auth status` whether you are signed in — the **only**
+   thing that can produce "Sign in". An unreadable keychain, an expired token or a
+   401 never conclude that on their own.
+3. Optionally (opt-in) read `/usage` from an isolated no-tools Claude Code session.
+4. **Claude Code owns authentication and credential refresh.** This app never
+   reads the refresh token, never exchanges or rotates it, and never writes to
+   the keychain.
+
+The keychain read is time-limited and pauses after a denial, so a permission
+dialog can neither hang a refresh nor be raised on every one.
+
 ## Threat model in one paragraph
 
 Touch Bar Usage reads one existing credential that another application (Claude

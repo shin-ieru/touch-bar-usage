@@ -41,6 +41,9 @@ Delete it any time; the app will simply re-fetch.
 - your terminal history
 - browser data or cookies
 - any Keychain item other than the single Claude Code credential
+- your Claude Code conversations, history, or projects — the optional `/usage`
+  fallback runs in an empty directory of its own, with tools disabled, and sends
+  no prompt
 - `~/.codex/auth.json` or any OpenAI credential
 - your Codex threads, prompts, or session history
 - any other application's data

@@ -60,17 +60,17 @@ Without a Touch Bar the app still runs and the menu bar shows everything.
 
 ### From a release build
 
-1. Download `Touch-Bar-Usage-v0.1.0-macOS.zip` from the Releases page.
+1. Download `Touch-Bar-Usage-v0.1.1-macOS.zip` from the Releases page.
 2. Verify the checksum against the published `.sha256`:
    ```bash
-   shasum -a 256 Touch-Bar-Usage-v0.1.0-macOS.zip
+   shasum -a 256 Touch-Bar-Usage-v0.1.1-macOS.zip
    ```
 3. Unzip and move **Touch Bar Usage.app** to `/Applications`.
 4. **First launch:** the build is *not* notarized (see below), so macOS will
    refuse to open it by double-click. Right-click the app → **Open** → **Open**.
    You only need to do this once.
 
-> **⚠️ Not signed with a Developer ID and not notarized.** v0.1.0 is ad-hoc
+> **⚠️ Not signed with a Developer ID and not notarized.** v0.1.1 is ad-hoc
 > signed only. Gatekeeper will warn you on first launch. If you would rather not
 > accept that, **build from source** instead — it takes about a minute. Do not
 > disable Gatekeeper system-wide to work around this.
@@ -150,8 +150,12 @@ else. In particular:
   it has no field capable of holding a credential;
 - the only host ever contacted is `api.anthropic.com`.
 
-If your token expires, the widget shows `sign in` and the menu tells you to
-re-authenticate in Claude Code. It will not do that for you, by design.
+If the OAuth path stops working — an expired token, a keychain prompt, a rejected
+request — the app asks `claude auth status` rather than assuming you are logged
+out, and keeps showing your last known figures marked stale. **"Sign in" appears
+only when Claude Code itself reports you are signed out.** It will never sign you
+in for you, by design. See
+[`docs/claude-auth-resilience.md`](docs/claude-auth-resilience.md).
 
 Full detail: [`SECURITY.md`](SECURITY.md) and
 [`docs/security-model.md`](docs/security-model.md).
@@ -338,16 +342,19 @@ the process, so cleanup runs. If one is stranded, log out and back in.
   hide it. The menu-bar command works in all modes.
 - Built on **undocumented private macOS APIs** — a macOS update may break the
   Touch Bar integration. It degrades to menu-bar-only rather than crashing.
-- **Not notarized** in v0.1.0; Gatekeeper warns on first launch.
+- **Not notarized**; Gatekeeper warns on first launch.
 - **Intel Touch Bar Macs are unverified.** Apple Silicon only so far.
 - Codex does not always report both windows; a missing 5-hour window is shown as
   `not reported`.
 - The Claude usage endpoint is **undocumented** and may change upstream.
 - Not distributed through the Mac App Store, and cannot be.
+- The optional Claude `/usage` fallback (`TBU_CLAUDE_CLI_FALLBACK=1`) does not
+  currently get past Claude Code's first-run setup screen, so it is off by
+  default. Nothing depends on it.
 
 ## Roadmap
 
-**v0.1.0** — Claude Code and Codex support, on the Touch Bar. You are here.
+**v0.1.1** — Claude Code and Codex support, on the Touch Bar. You are here.
 
 Next, roughly in order:
 
