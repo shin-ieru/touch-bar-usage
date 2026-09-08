@@ -86,6 +86,10 @@ keychain via `store-credentials`.
 
 ## Publication history
 
+**v0.1.1 — published.** <https://github.com/shin-ieru/touch-bar-usage/releases/tag/v0.1.1>
+Fixes a false "Sign in" when Claude Code is still authenticated, and stops the
+keychain prompt hanging or repeating. `v0.1.0` and its binary were left untouched.
+
 **v0.1.0 — published.** <https://github.com/shin-ieru/touch-bar-usage/releases/tag/v0.1.0>
 
 Verified after publication by downloading the artifact from the Release page,

@@ -46,6 +46,49 @@ structurally — no screen scraping, no OCR.
 > `/usage` output at the same moment has **not** been performed. Run `/usage` in
 > Claude Code and compare against the menu-bar figures to close this out.
 
+## v0.1.1 release (macOS 26.6.2)
+
+The Claude authentication hotfix, verified against the **published** artifact
+downloaded from the Release page.
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | Downloaded artifact checksum matches published `.sha256` | **pass** — `2baf256d…b449437` |
+| 2 | Bundle contains only Info.plist, CodeResources and the binary | **pass** |
+| 3 | No third-party artwork | **pass** |
+| 4 | Version / build match the release commit | **pass** — 0.1.1 / `a253659` |
+| 5 | Downloaded build launches, badge installs | **pass** |
+| 6 | OAuth path unavailable → **no false "Sign in"** | **pass** — ends in `failed`, never `needsAuthentication` |
+| 7 | Cached figures shown with the stale marker instead | **pass** — observed on the Touch Bar |
+| 8 | Refresh cycle is fast again | **pass** — ~2 s, was ~27 s while the CLI probe ran |
+| 9 | Idle CPU | **pass** — 0.0% |
+| 10 | No orphaned `claude` child processes | **pass** |
+| 11 | Codex unaffected | **pass** |
+| 12 | `spctl -a` | **rejected**, expected for an unnotarized build |
+
+### The bug, reproduced and fixed
+
+The false "Sign in" was reproduced from the app's own log before the fix (three
+`needs authentication` refreshes while Claude Code was signed in, then a
+spontaneous recovery once Claude Code refreshed its own token). After the fix, the
+same condition — keychain denied, OAuth unusable — leaves the cached figures on
+screen with a stale marker.
+
+### Second defect found during this work
+
+A keychain ACL dialog blocked `SecItemCopyMatching` indefinitely, hanging refreshes
+with no log output at 0% CPU, and reappeared on every refresh after dismissal.
+Fixed with a time-limited read plus a 30-minute pause after denial. Both the hang
+and the repetition were observed directly, and both are gone.
+
+### Not verified
+
+| Check | Status |
+| --- | --- |
+| Genuine logout → "Sign in" on hardware | **not verified live** — would require invalidating the real credential. Covered by unit tests |
+| CLI `/usage` fallback | **does not work on this hardware**; ships opt-in and disabled. Claude Code 2.1.62 shows a first-run setup screen in a fresh probe directory that the PTY session does not get past. Parser covered by 16 fixture tests |
+| Browser-download quarantine prompt | still not reproduced — `curl` sets provenance, not quarantine |
+
 ## v0.1.0 release (macOS 26.6.2)
 
 Run against the **packaged Release artifact**, extracted from
