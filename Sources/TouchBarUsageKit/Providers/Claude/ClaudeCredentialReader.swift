@@ -46,19 +46,35 @@ public struct KeychainClaudeCredentialReader: ClaudeCredentialReading {
     public static let serviceName = "Claude Code-credentials"
 
     private let service: String
+    private let allowInteraction: Bool
     private let log = Log(category: "credential")
 
-    public init(service: String = KeychainClaudeCredentialReader.serviceName) {
+    /// `allowInteraction` is false for routine refreshes so a keychain dialog can
+    /// never block them. It exists as a parameter only so a future explicit
+    /// user-initiated "grant access" action could opt in.
+    public init(service: String = KeychainClaudeCredentialReader.serviceName,
+                allowInteraction: Bool = false) {
         self.service = service
+        self.allowInteraction = allowInteraction
     }
 
     public func readCredential() throws -> ClaudeCredential {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        if !allowInteraction {
+            // Fail rather than prompt.
+            //
+            // Without this the call blocks indefinitely inside SecItemCopyMatching
+            // while macOS shows a keychain dialog — from a background menu-bar app
+            // that is an invisible hang, and on every refresh it would be a
+            // recurring interruption. Returning `errSecInteractionNotAllowed`
+            // lets the provider fall back to the CLI instead.
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
 
