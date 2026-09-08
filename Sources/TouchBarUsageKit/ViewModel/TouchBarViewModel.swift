@@ -186,7 +186,10 @@ public struct DetailViewModel: Equatable, Sendable {
             + snapshot.windows.filter { $0.category == .other && $0.usedPercent > 0 }
 
         let rows = ordered.map { window -> Row in
-            var reset = "reset time unknown"
+            // The CLI fallback gives prose ("resets 2:00pm") rather than a
+            // timestamp, so it is used verbatim when there is no date to count
+            // down from.
+            var reset = window.resetDescription ?? "reset time unknown"
             if let resetAt = window.resetAt {
                 let relative = formatter.relative(to: resetAt, now: now)
                 // Long horizons are easier to act on with a weekday than a countdown.

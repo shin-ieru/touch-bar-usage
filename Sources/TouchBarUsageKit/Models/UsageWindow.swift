@@ -29,6 +29,10 @@ public struct UsageWindow: Codable, Equatable, Sendable {
     /// Nominal length of the window, when the provider states or implies one.
     public let duration: TimeInterval?
     public let category: UsageWindowCategory
+    /// Human reset wording when the source gives prose rather than a timestamp —
+    /// Claude Code's `/usage` prints "resets 2:00pm", not an ISO date. Optional,
+    /// so snapshots cached by earlier versions still decode.
+    public let resetDescription: String?
 
     public init(
         id: String,
@@ -37,7 +41,8 @@ public struct UsageWindow: Codable, Equatable, Sendable {
         usedPercent: Double,
         resetAt: Date? = nil,
         duration: TimeInterval? = nil,
-        category: UsageWindowCategory
+        category: UsageWindowCategory,
+        resetDescription: String? = nil
     ) {
         self.id = id
         self.label = label
@@ -46,6 +51,7 @@ public struct UsageWindow: Codable, Equatable, Sendable {
         self.resetAt = resetAt
         self.duration = duration
         self.category = category
+        self.resetDescription = resetDescription
     }
 
     /// Providers hand us whatever the server said. Non-finite values are treated
