@@ -168,11 +168,14 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
         }
         posix_spawn_file_actions_addclose(&actions, primary)
         posix_spawn_file_actions_addclose(&actions, secondary)
-        if #available(macOS 26, *) {
-            posix_spawn_file_actions_addchdir(&actions, workingDirectory)
-        } else {
-            posix_spawn_file_actions_addchdir_np(&actions, workingDirectory)
-        }
+        // `_np` unconditionally: it is the Darwin spelling and has existed since
+        // macOS 10.15, so it covers the whole supported range.
+        //
+        // The unsuffixed POSIX-2024 name only exists in newer SDKs, and selecting
+        // it behind `#available` does not help — that is a *runtime* check, so
+        // both branches must still compile. Guarding it that way built here on
+        // the macOS 26 SDK and failed on CI's older one.
+        posix_spawn_file_actions_addchdir_np(&actions, workingDirectory)
         var defaults = sigset_t(), mask = sigset_t()
         sigemptyset(&defaults); sigemptyset(&mask)
         for signal in [SIGTERM, SIGINT, SIGHUP, SIGPIPE, SIGTTIN, SIGTTOU] { sigaddset(&defaults, signal) }
