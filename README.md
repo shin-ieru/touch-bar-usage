@@ -60,17 +60,17 @@ Without a Touch Bar the app still runs and the menu bar shows everything.
 
 ### From a release build
 
-1. Download `Touch-Bar-Usage-v0.1.2-macOS.zip` from the Releases page.
+1. Download `Touch-Bar-Usage-v0.1.3-macOS.zip` from the Releases page.
 2. Verify the checksum against the published `.sha256`:
    ```bash
-   shasum -a 256 Touch-Bar-Usage-v0.1.2-macOS.zip
+   shasum -a 256 Touch-Bar-Usage-v0.1.3-macOS.zip
    ```
 3. Unzip and move **Touch Bar Usage.app** to `/Applications`.
 4. **First launch:** the build is *not* notarized (see below), so macOS will
    refuse to open it by double-click. Right-click the app → **Open** → **Open**.
    You only need to do this once.
 
-> **⚠️ Not signed with a Developer ID and not notarized.** v0.1.2 is ad-hoc
+> **⚠️ Not signed with a Developer ID and not notarized.** v0.1.3 is ad-hoc
 > signed only. Gatekeeper will warn you on first launch. If you would rather not
 > accept that, **build from source** instead — it takes about a minute. Do not
 > disable Gatekeeper system-wide to work around this.
@@ -335,8 +335,8 @@ the process, so cleanup runs. If one is stranded, log out and back in.
 
 ## Roadmap
 
-**v0.1.2** — Claude usage and authentication delegated to the official Claude Code
-CLI. You are here.
+**v0.1.3** — Claude usage and authentication delegated to the official Claude Code
+CLI, plus a source-build fix for older SDKs. You are here.
 
 Next, roughly in order:
 
