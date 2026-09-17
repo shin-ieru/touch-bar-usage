@@ -7,8 +7,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 status=0
 
-# Only inspect tracked files: build products and gitignored assets are irrelevant.
-files() { git ls-files; }
+# Inspect tracked and new source files; ignore removed files and build artifacts.
+files() { git ls-files --cached --others --exclude-standard | while IFS= read -r file; do [ ! -f "$file" ] || printf '%s\n' "$file"; done; }
 
 echo "==> Scanning tracked files for credential material"
 # Real Anthropic tokens carry a long opaque suffix; test literals do not.
@@ -124,14 +124,13 @@ else
   echo "  ok: Codex usage is read-only"
 fi
 
-echo "==> Checking Anthropic is the only network destination"
-offenders="$(files | grep -E '^Sources/.*\.swift$' | xargs grep -lE 'URLSession' 2>/dev/null \
-  | grep -v 'AnthropicUsageClient.swift' || true)"
-if [ -n "$offenders" ]; then
-  echo "$offenders" | sed 's/^/  unexpected URLSession use: /'
-  echo "FAIL: network access belongs in AnthropicUsageClient only"; status=1
+echo "==> Checking providers delegate credentials and network access"
+if files | grep -E '^Sources/.*\.swift$' \
+   | xargs grep -nE 'URLSession|SecItemCopyMatching|Claude Code-credentials|claudeAiOauth|api\.anthropic\.com|\.credentials\.json' 2>/dev/null \
+   | grep -vE ':[0-9]+:[[:space:]]*(///|//|\*)'; then
+  echo "FAIL: direct provider credential or network access found"; status=1
 else
-  echo "  ok: URLSession confined to AnthropicUsageClient"
+  echo "  ok: provider credentials and network calls belong to official CLIs"
 fi
 
 echo "==> Checking no synthetic Escape key is injected"

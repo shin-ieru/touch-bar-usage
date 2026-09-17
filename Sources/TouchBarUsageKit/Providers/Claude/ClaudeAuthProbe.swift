@@ -1,9 +1,10 @@
 import Foundation
+import CoreFoundation
 
 /// Runs a short-lived command and returns its output. Injected so the provider
 /// can be tested without spawning anything.
 public protocol CommandRunning: Sendable {
-    /// Returns stdout+stderr and the exit status, or nil on timeout/launch failure.
+    /// Returns stdout and the exit status, or nil on timeout/launch failure.
     func run(executable: String,
              arguments: [String],
              workingDirectory: String?,
@@ -35,7 +36,7 @@ public struct ClaudeAuthProbe: Sendable {
 
     public func authState() async -> ClaudeAuthState {
         guard let executable = resolver.executablePath() else {
-            return .unknown("claude not installed")
+            return .notInstalled
         }
         guard let result = await runner.run(executable: executable,
                                             arguments: Self.arguments,
@@ -55,41 +56,18 @@ public struct ClaudeAuthProbe: Sendable {
     /// name and organisation id; none of them are extracted, so they cannot reach
     /// a log, the cache, or the diagnostics window.
     public static func parse(output: String, status: Int32) -> ClaudeAuthState {
-        // The JSON object may be preceded by warnings or update notices.
-        guard let start = output.firstIndex(of: "{"),
-              let end = output.lastIndex(of: "}"),
-              start < end
-        else {
-            return fallbackFromText(output, status: status)
+        guard let data = output.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = root["loggedIn"] as? NSNumber,
+              CFGetTypeID(value) == CFBooleanGetTypeID() else {
+            return .unknown("unrecognised auth output")
         }
-        let json = String(output[start...end])
-        guard let data = json.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            return fallbackFromText(output, status: status)
-        }
-        if let loggedIn = root["loggedIn"] as? Bool {
-            return loggedIn ? .loggedIn : .loggedOut
-        }
-        return fallbackFromText(output, status: status)
+        let loggedIn = value.boolValue
+        if status == 0 && loggedIn { return .loggedIn }
+        if status == 1 && !loggedIn { return .loggedOut }
+        return .unknown("inconsistent auth result")
     }
 
-    /// If the JSON shape changes, fall back to unambiguous text — and when in
-    /// doubt return `.unknown` rather than claiming a logout.
-    static func fallbackFromText(_ output: String, status: Int32) -> ClaudeAuthState {
-        let lowered = output.lowercased()
-        let loggedOutMarkers = [
-            "not logged in", "logged out", "no active session",
-            "please run /login", "run `claude auth login`", "not authenticated",
-        ]
-        if loggedOutMarkers.contains(where: { lowered.contains($0) }) {
-            return .loggedOut
-        }
-        if lowered.contains("\"loggedin\": true") || lowered.contains("logged in as") {
-            return .loggedIn
-        }
-        return .unknown(status == 0 ? "unrecognised auth output" : "auth probe failed")
-    }
 }
 
 /// Test double.

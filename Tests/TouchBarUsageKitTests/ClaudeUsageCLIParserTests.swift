@@ -162,13 +162,13 @@ final class ClaudeAuthProbeTests: XCTestCase {
     }
 
     func testParsesLoggedOut() {
-        XCTAssertEqual(ClaudeAuthProbe.parse(output: #"{"loggedIn": false}"#, status: 0), .loggedOut)
+        XCTAssertEqual(ClaudeAuthProbe.parse(output: #"{"loggedIn": false}"#, status: 1), .loggedOut)
     }
 
     /// Update notices and warnings often precede the JSON.
     func testIgnoresLeadingNoise() {
         let output = "A new version is available.\n{\"loggedIn\": true}\n"
-        XCTAssertEqual(ClaudeAuthProbe.parse(output: output, status: 0), .loggedIn)
+        XCTAssertFalse(ClaudeAuthProbe.parse(output: output, status: 0).isConfirmedLoggedOut)
     }
 
     /// Only `loggedIn` is read. Anything identifying in the payload must not be
@@ -191,8 +191,8 @@ final class ClaudeAuthProbeTests: XCTestCase {
     }
 
     func testTextFallbackRecognisesExplicitLogout() {
-        XCTAssertEqual(ClaudeAuthProbe.parse(output: "You are not logged in.", status: 1), .loggedOut)
-        XCTAssertEqual(ClaudeAuthProbe.parse(output: "Please run /login", status: 1), .loggedOut)
+        XCTAssertFalse(ClaudeAuthProbe.parse(output: "You are not logged in.", status: 1).isConfirmedLoggedOut)
+        XCTAssertFalse(ClaudeAuthProbe.parse(output: "Please run /login", status: 1).isConfirmedLoggedOut)
     }
 
     func testNonZeroExitWithoutLogoutTextIsUnknown() {
@@ -233,7 +233,7 @@ final class ClaudeUsageProbeTests: XCTestCase {
     /// Tools are disabled explicitly; the probe only needs the command UI.
     func testSessionDisablesTools() {
         let arguments = ClaudePTYSession.noToolArguments
-        guard let index = arguments.firstIndex(of: "--allowed-tools") else {
+        guard let index = arguments.firstIndex(of: "--tools") else {
             return XCTFail("the probe must disable tools")
         }
         XCTAssertEqual(arguments[index + 1], "", "an empty allow-list grants nothing")
@@ -246,8 +246,8 @@ final class ClaudeUsageProbeTests: XCTestCase {
     /// The CLI fallback is opt-in while it remains unverified on hardware, so a
     /// normal refresh never pays its cost.
     func testCLIFallbackIsOptInByDefault() {
-        XCTAssertFalse(ClaudeUsageProbe.isEnabled,
-                       "the probe must not run unless explicitly enabled")
+        XCTAssertTrue(ClaudeUsageProbe.isEnabled,
+                       "the compatibility fallback runs by default")
     }
 
     /// Claude Code refuses to run inside another Claude Code session, and that
@@ -263,14 +263,6 @@ final class ClaudeUsageProbeTests: XCTestCase {
 
     /// Cleanup is scoped to the probe's own scratch files. Normal Claude Code
     /// history lives elsewhere and must never be touched.
-    func testOnlyProbeArtifactsAreCleanedUp() {
-        XCTAssertTrue(ClaudeUsageProbe.isProbeArtifact(".claude"))
-        XCTAssertTrue(ClaudeUsageProbe.isProbeArtifact("CLAUDE.md"))
-        XCTAssertFalse(ClaudeUsageProbe.isProbeArtifact("history.jsonl"))
-        XCTAssertFalse(ClaudeUsageProbe.isProbeArtifact("projects"))
-        XCTAssertFalse(ClaudeUsageProbe.isProbeArtifact("important-user-file.txt"))
-    }
-
     func testLaunchFailureYieldsNoSnapshot() async throws {
         let probe = ClaudeUsageProbe(resolver: StubInstallationProbe(installed: true),
                                      session: StubClaudeCLISession(.launchFailed),

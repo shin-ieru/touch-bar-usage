@@ -1,11 +1,7 @@
 import Foundation
+import CoreFoundation
 
-/// Turns Anthropic's usage JSON into normalized windows.
-///
-/// The endpoint is undocumented (see docs/security-model.md), so this parser
-/// assumes as little as possible: it walks whatever top-level objects it finds,
-/// accepts several plausible spellings for the percentage and reset fields, and
-/// routes anything it does not recognise into `.other` instead of failing.
+/// Normalizes Claude CLI percentage buckets (0–100). No network access.
 public enum ClaudeUsageParser {
     public static let providerID = "claude"
 
@@ -52,6 +48,7 @@ public enum ClaudeUsageParser {
     static func number(in object: [String: Any], keys: [String]) -> Double? {
         for key in keys {
             guard let raw = object[key] else { continue }
+            if let value = raw as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() { continue }
             if let d = raw as? Double, d.isFinite { return d }
             if let i = raw as? Int { return Double(i) }
             // A numeric string is still a number we can use.
@@ -63,6 +60,7 @@ public enum ClaudeUsageParser {
     static func date(in object: [String: Any], keys: [String]) -> Date? {
         for key in keys {
             guard let raw = object[key] else { continue }
+            if let value = raw as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() { continue }
             if raw is NSNull { return nil }
             if let s = raw as? String, let d = parseDate(s) { return d }
             // Epoch seconds or milliseconds.

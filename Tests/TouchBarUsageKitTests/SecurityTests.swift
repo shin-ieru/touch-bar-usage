@@ -54,61 +54,6 @@ final class SecurityTests: XCTestCase {
         XCTAssertTrue(line.contains("status=401"))
     }
 
-    // MARK: - Credential containment
-
-    /// The credential's description is what an accidental interpolation prints.
-    func testCredentialDescriptionIsRedacted() {
-        let credential = ClaudeCredential(accessToken: "sk-ant-oat01-SECRET", expiresAt: nil)
-        XCTAssertFalse("\(credential)".contains("SECRET"))
-        XCTAssertFalse(credential.debugDescription.contains("SECRET"))
-        XCTAssertTrue("\(credential)".contains("redacted"))
-    }
-
-    /// Only accessToken and expiresAt are lifted out of the keychain blob. The
-    /// refresh token must not be carried anywhere, even in memory.
-    func testKeychainParseIgnoresRefreshTokenAndAccountFields() throws {
-        let blob = """
-        {"claudeAiOauth":{"accessToken":"access-value","refreshToken":"refresh-value",
-        "expiresAt":1788766431839,"refreshTokenExpiresAt":1789125882839,
-        "scopes":["user:inference"],"subscriptionType":"pro"},
-        "organizationUuid":"00000000-0000-0000-0000-000000000000"}
-        """
-        let credential = try KeychainClaudeCredentialReader.parse(Data(blob.utf8))
-        XCTAssertEqual(credential.accessToken, "access-value")
-        XCTAssertNotNil(credential.expiresAt)
-
-        // Reflect over every stored property: nothing else survived the parse.
-        let stored = Mirror(reflecting: credential).children.compactMap { $0.value as? String }
-        XCTAssertFalse(stored.contains("refresh-value"), "refresh token must never be read")
-        XCTAssertFalse(stored.contains("00000000-0000-0000-0000-000000000000"),
-                       "account identifiers must never be read")
-    }
-
-    func testExpiryIsParsedFromMilliseconds() throws {
-        let blob = #"{"claudeAiOauth":{"accessToken":"a","expiresAt":1788766431839}}"#
-        let credential = try KeychainClaudeCredentialReader.parse(Data(blob.utf8))
-        let expected = Date(timeIntervalSince1970: 1788766431.839)
-        XCTAssertEqual(try XCTUnwrap(credential.expiresAt).timeIntervalSince1970,
-                       expected.timeIntervalSince1970, accuracy: 0.01)
-    }
-
-    func testMalformedOrEmptyCredentialBlobsThrow() {
-        for blob in [#"{}"#, #"{"claudeAiOauth":{}}"#, #"{"claudeAiOauth":{"accessToken":""}}"#, "not json"] {
-            XCTAssertThrowsError(try KeychainClaudeCredentialReader.parse(Data(blob.utf8))) { error in
-                XCTAssertEqual(error as? CredentialError, .malformed)
-            }
-        }
-    }
-
-    func testExpiryComparison() {
-        let now = Date.testNow
-        XCTAssertFalse(ClaudeCredential(accessToken: "a", expiresAt: now.addingTimeInterval(3600)).isExpired(now: now))
-        XCTAssertTrue(ClaudeCredential(accessToken: "a", expiresAt: now.addingTimeInterval(-1)).isExpired(now: now))
-        XCTAssertTrue(ClaudeCredential(accessToken: "a", expiresAt: now.addingTimeInterval(30)).isExpired(now: now),
-                      "leeway treats an imminent expiry as expired")
-        XCTAssertFalse(ClaudeCredential(accessToken: "a", expiresAt: nil).isExpired(now: now))
-    }
-
     // MARK: - Nothing credential-shaped can be serialised
 
     /// The cached model has no field capable of holding a token. Encoding a
@@ -156,29 +101,4 @@ final class SecurityTests: XCTestCase {
         XCTAssertNil(CacheStore(directory: directory).load(providerID: "claude"))
     }
 
-    // MARK: - Diagnostics payload
-
-    /// "Copy Diagnostics" must be safe to paste into a public issue.
-    func testDiagnosticsContainNoCredentialMaterial() async {
-        let provider = ClaudeUsageProvider(
-            credentials: StubCredentialReader(token: "sk-ant-oat01-SECRET",
-                                              expiresAt: Date.testNow.addingTimeInterval(3600)),
-            client: StubHTTPClient(always: .success(Data())),
-            installation: StubInstallationProbe(installed: true),
-            now: { .testNow }
-        )
-        let text = await provider.diagnostics()
-            .map { "\($0.label): \($0.value)" }
-            .joined(separator: "\n")
-
-        XCTAssertFalse(text.contains("SECRET"))
-        XCTAssertFalse(text.lowercased().contains("sk-ant"))
-        XCTAssertTrue(text.contains("Claude credential: found"), "presence is reported, value is not")
-    }
-
-    /// The one remote destination is Anthropic, and it is not configurable.
-    func testOnlyNetworkDestinationIsAnthropic() {
-        XCTAssertEqual(AnthropicUsageClient.endpoint.host, "api.anthropic.com")
-        XCTAssertEqual(AnthropicUsageClient.endpoint.scheme, "https")
-    }
 }

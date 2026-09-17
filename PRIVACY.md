@@ -1,75 +1,34 @@
 # Privacy
 
-**Short version: this app collects nothing, sends nothing anywhere except
-Anthropic, and has no server.**
+Touch Bar Usage has no analytics, advertising, crash-reporting service or backend.
 
-## What leaves your Mac
+## Local CLI boundary
 
-**For Claude:** one read-only HTTPS GET to
-`https://api.anthropic.com/api/oauth/usage`, carrying the Claude Code access
-token already stored on your machine in its `Authorization` header. That request
-asks Anthropic "how much of my quota have I used?" and nothing else.
+Claude usage is requested from the installed official Claude Code CLI through
+local stdio, with an isolated `/usage` PTY as a compatibility fallback. Codex
+continues to use its local App Server. The CLIs own authentication and network
+access. This app never receives their bearer or refresh tokens, reads credential
+files, accesses the Keychain, or contacts provider HTTP endpoints directly.
+Provider handling of CLI requests is governed by the providers' privacy policies.
 
-**For Codex: nothing this app sends.** It talks to the Codex App Server already
-on your machine over a local pipe and asks it for your usage numbers. That server
-— not this app — makes whatever network request it needs, using credentials this
-app never sees. This app holds no OpenAI token and contacts no OpenAI host.
+No model prompt is sent. Tools, hooks, project settings and MCP are disabled for
+Claude usage probes. The working directory is a dedicated `ClaudeProbe` directory
+under Application Support, outside user projects. The app does not read source
+files, conversations, terminal history or browser data. CLI internals can use
+their own configuration and session metadata; the app does not retain it.
 
-Anthropic's and OpenAI's handling of those requests is governed by their own
-privacy policies, not this project's.
+## Stored data
 
-## What stays on your Mac
-
-A single cache file:
-
-```
-~/Library/Application Support/com.gabrielanyog.touchbarusage/usage-claude.json
-```
-
-It contains normalized usage data only — percentages, reset timestamps, window
-labels, and the time of the last fetch. You can read it yourself; it is
-pretty-printed JSON. It contains no credential, no account identifier, and no
-conversation data, because the type that is written to it has no field capable of
-holding any of those.
-
-Delete it any time; the app will simply re-fetch.
-
-## What the app never touches
-
-- your Claude conversations, prompts, or model responses
-- your source code or project files
-- your terminal history
-- browser data or cookies
-- any Keychain item other than the single Claude Code credential
-- your Claude Code conversations, history, or projects — the optional `/usage`
-  fallback runs in an empty directory of its own, with tools disabled, and sends
-  no prompt
-- `~/.codex/auth.json` or any OpenAI credential
-- your Codex threads, prompts, or session history
-- any other application's data
-
-## Telemetry
-
-There is none:
-
-- no analytics
-- no usage tracking
-- no crash-reporting SDK that transmits anything
-- no advertising
-- no update or "phone home" ping
-- **no developer-operated server exists at all**
-
-The project has no backend. There is nowhere for your data to go.
+Normalized cache files live under
+`~/Library/Application Support/com.gabrielanyog.touchbarusage/` and contain only
+usage percentages, labels, reset times and fetch timestamps. Delete them at any
+time; the app can fetch again. No account metadata or raw terminal transcripts
+are persisted. The CLI may maintain its own configuration and operational data
+according to its own behavior; the monitor does not rewrite that data.
 
 ## Logging
 
-The app logs to the macOS unified log under the subsystem
-`com.gabrielanyog.touchbarusage`. Log lines record normalized states — for
-example `usage refresh succeeded {provider=claude windows=3}` — never response
-bodies, never request headers, and never credentials. The logger redacts values
-both by key name and by recognising token-shaped strings.
-
----
-
-Touch Bar Usage is an independent open-source project and is not affiliated with,
-endorsed by, or sponsored by Anthropic.
+Unified logs contain fixed, normalized status messages. They do not include raw
+CLI output, credentials, account identifiers or request headers. Diagnostics
+include the last known source and availability, not private account details.
+The logger also redacts sensitive keys and token-shaped values.

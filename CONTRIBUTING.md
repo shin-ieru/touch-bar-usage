@@ -66,8 +66,8 @@ rather than crashing — keep it that way.
 Read [`docs/provider-contract.md`](docs/provider-contract.md) first. The short
 version: implement `UsageProvider`, never throw, never surface credentials to
 callers, never mutate stored credentials, and express `usedPercent` as **consumed**
-quota. Prefer talking to a local broker (as the Codex provider does) over handling
-a credential yourself (as the Claude provider must).
+quota. Delegate authentication to the official local CLI, as both existing providers
+do. Never add direct credential access.
 
 Adding a third provider should require no changes to either existing one. If you
 find yourself writing `if provider.id == "claude"` outside the Claude directory,

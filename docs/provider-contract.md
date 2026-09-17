@@ -22,9 +22,9 @@ public protocol UsageProvider: Sendable {
 2. **Never leak credentials upward.** Callers receive normalized percentages and
    states. They must never see a token, an `Authorization` header, an HTTP status
    object, or a raw response body.
-3. **Never mutate stored credentials.** Providers read whatever the parent tool
-   (Claude Code, and later Codex) already stores. Token refresh belongs to that
-   tool. If a token is expired, report `needsAuthentication`.
+3. **Delegate authentication.** Official CLIs own credential reads and refresh.
+   Only authoritative CLI logout evidence may produce `needsAuthentication`.
+   Usage failures and unknown auth never imply logout.
 
 ## `ProviderState`
 
@@ -52,9 +52,8 @@ Guidance on the distinctions that matter:
 | Situation | State | Why |
 | --- | --- | --- |
 | Tool not installed at all | `notInstalled` | The fix is "install it" |
-| Installed but no/expired credential | `needsAuthentication` | The fix is "sign in over there" |
-| Credential exists, we cannot read it | `failed("keychain access denied")` | The fix is a permission prompt |
-| HTTP 401/403 | `needsAuthentication` | Same fix as above |
+| CLI explicitly confirms logout | `needsAuthentication` | Sign in using the official CLI |
+| Usage fails, auth logged in or unknown | `failed(...)` | Coordinator preserves stale cache |
 | HTTP 429 | `rateLimited(retryAfter:)` | Coordinator applies backoff |
 | No network | `offline` | Transient; last good data still shown |
 | Unparseable body | `failed(...)` | Likely an upstream shape change |
@@ -137,30 +136,17 @@ payloads, no email addresses.
 
 ## Two reference implementations
 
-Two providers now exist, and they take deliberately different approaches — worth
-reading both before adding a third:
+Both providers delegate to local official CLIs:
 
 | | Claude | Codex |
 | --- | --- | --- |
-| Credential | access token read from Keychain | **none held** |
-| Transport | `URLSession` GET | stdio JSON-RPC to a local broker |
-| Failure surface | HTTP status | RPC error / child exit |
+| Credentials held | None | None |
+| Transport | stream-json control protocol / isolated PTY | App Server JSON-RPC |
+| Failure surface | control response, terminal parsing, child exit | RPC error / child exit |
 
-**Prefer the Codex shape when the vendor ships a local broker.** Asking an
-already-authenticated local process for numbers is strictly safer than handling a
-credential yourself. Read a token only when there is no alternative, as with
-Claude.
+## Adding a provider
 
-## Adding a provider — checklist
-
-1. Create `Sources/TouchBarUsageKit/Providers/<Name>/`.
-2. Implement `UsageProvider`, splitting credential reading, HTTP, and parsing into
-   separate types as the Claude provider does — it keeps each unit testable.
-3. Categorize windows by meaning; tolerate unknown keys.
-4. Add fixtures under `Tests/TouchBarUsageKitTests/Fixtures/`, mirroring the
-   Claude parser test cases (valid, missing window, null reset, out-of-range
-   percentage, unknown fields, malformed).
-5. Add provider state-mapping tests using `StubHTTPClient`.
-6. Extend `SecurityTests` to cover the new credential path.
-7. Do not modify Claude internals. If you need to, the seam is in the wrong place
-   — fix the seam.
+Implement `UsageProvider` with injectable CLI transport and parsers. Add synthetic
+fixtures for missing windows, invalid percentages and reset dates. Test state
+mapping without installed or authenticated CLIs. Keep normalized cache and safe
+diagnostics guarantees. Never add direct credential ownership.

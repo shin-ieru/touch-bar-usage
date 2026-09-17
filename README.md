@@ -120,45 +120,32 @@ offers **Show Usage on Touch Bar**, which works in every Touch Bar mode.
 
 ## Claude integration
 
-The app reads the access token Claude Code already stores in your macOS Keychain
-and makes one read-only request:
+Touch Bar Usage delegates Claude authentication and usage retrieval to the
+installed Claude Code CLI. It does not refresh, rewrite, or own Claude Code
+credentials.
 
+```text
+Touch Bar Usage → Claude CLI get_usage → normalized usage
+               → isolated /usage compatibility fallback
 ```
-GET https://api.anthropic.com/api/oauth/usage
-```
 
-> **⚠️ This endpoint is undocumented.** It is what Claude Code's own OAuth
-> session uses, not a published public API. It may change shape or disappear
-> without notice. The parser is written defensively as a result — the live
-> response already contains a bucket this project does not recognise, which it
-> keeps rather than choking on. If Anthropic publishes a supported mechanism, this
-> should move to it.
+`get_usage` is experimental/internal and feature-detected. Verified with the installed official editor-bundled Claude CLI; older 2.1.62
+falls back to the terminal interface. The resolver checks standard installs and
+official editor extensions, preferring newer known versions. `TBU_CLAUDE_PATH`
+can select a specific executable. Both paths disable
+tools, hooks and MCP and send no model prompt. No user project is used.
 
-No prompt is ever sent. No inference is performed. No conversation is read.
+If both sources fail, `claude auth status` decides authentication. Only confirmed
+logout shows **Sign in**. Logged-in or unknown states keep last-good numbers
+marked stale, or show unavailable when no cache exists. The direct Keychain
+reader and OAuth HTTP client have been removed.
 
-### Security and Keychain
+Complete Claude Code's normal first-run setup in your own terminal before using
+the interactive fallback. The app never completes login or global onboarding.
 
-The app reads exactly two values from the `Claude Code-credentials` keychain
-item — `claudeAiOauth.accessToken` and `claudeAiOauth.expiresAt` — and nothing
-else. In particular:
-
-- the **refresh token is never read or used**; Claude Code owns your
-  authentication lifecycle, and this app never modifies your keychain;
-- the access token exists only for the duration of one request — never written to
-  disk, the cache, the clipboard, or any log;
-- the cache stores only percentages, reset times and labels; the type written to
-  it has no field capable of holding a credential;
-- the only host ever contacted is `api.anthropic.com`.
-
-If the OAuth path stops working — an expired token, a keychain prompt, a rejected
-request — the app asks `claude auth status` rather than assuming you are logged
-out, and keeps showing your last known figures marked stale. **"Sign in" appears
-only when Claude Code itself reports you are signed out.** It will never sign you
-in for you, by design. See
-[`docs/claude-auth-resilience.md`](docs/claude-auth-resilience.md).
-
-Full detail: [`SECURITY.md`](SECURITY.md) and
-[`docs/security-model.md`](docs/security-model.md).
+See [protocol evidence and limitations](docs/claude-control-protocol.md),
+[authentication resilience](docs/claude-auth-resilience.md), and
+[security guarantees](SECURITY.md).
 
 ## Codex integration
 
@@ -199,10 +186,8 @@ If none is found, Codex reports `Not installed` and Claude carries on unaffected
 Touch Bar Usage has no analytics, telemetry, ads, crash reporting, or developer
 backend. There is no server component; there is nowhere for your data to go.
 
-**Claude** — reads only `accessToken` and `expiresAt` from the Claude Code
-keychain item, for one read-only usage request. The refresh token is never read
-or used, the access token is never persisted or logged, and the keychain is never
-modified.
+**Claude** — delegates to the installed CLI over local stdio/PTY. No access or
+refresh token is read, stored, logged or rewritten by this app.
 
 **Codex** — talks to the local Codex App Server over stdio. It does **not** read
 `~/.codex/auth.json`, never receives an OpenAI bearer token, and contacts no
@@ -276,7 +261,7 @@ rationale and the licensing rules for contributors are in
 
 ```bash
 make build         # compile (CONFIGURATION=debug for faster iteration)
-make test          # 171 unit tests — no network, keychain, Codex or Touch Bar
+make test          # credential-free unit tests — no network, keychain, Codex or Touch Bar
 make run           # build the .app bundle and launch it
 make assets        # fetch Clawd artwork onto this machine (gitignored output)
 make preview       # render PNG previews of every UI state to PreviewOutput/
@@ -318,16 +303,12 @@ OpenAI app already installed on your machine.
 (`codex login`), then check Diagnostics. Set `TBU_CODEX_PATH` if it lives
 somewhere unusual.
 
-**Claude shows `sign in`.** Your Claude Code token is expired or missing. Run `claude` and
-sign in; the widget picks it up on the next refresh (or use **Refresh Now**).
+**Claude shows `sign in`.** Claude Code's auth command confirmed logout. Sign in
+using Claude Code, then refresh the monitor.
 
-**Shows `keychain access denied` in Diagnostics.** You declined the keychain
-prompt. Grant access to the `Claude Code-credentials` item in Keychain Access, or
-delete the app's stored decision and relaunch.
-
-**Shows `offline` or `refresh later`.** No network, or Anthropic rate-limited the
-request. The app backs off automatically and keeps showing the last known values
-with a `~`.
+**Claude unavailable or stale.** Usage lookup failed; this does not imply logout.
+Check `claude auth status` and finish first-run setup in a normal terminal if
+needed. Diagnostics identify the last source and experimental method support.
 
 **Numbers look stale.** A trailing `~` means exactly that. Use **Refresh Now**;
 there is a 60-second floor between fetches.
@@ -354,7 +335,7 @@ the process, so cleanup runs. If one is stranded, log out and back in.
 
 ## Roadmap
 
-**v0.1.1** — Claude Code and Codex support, on the Touch Bar. You are here.
+**v0.1.2** — Claude CLI delegation hotfix (local preparation; not published).
 
 Next, roughly in order:
 

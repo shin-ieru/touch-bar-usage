@@ -19,6 +19,8 @@ enum ClaudeChildEnvironment {
                           extra: [String: String] = [:]) -> [String: String] {
         var env = base
         for key in clearedKeys { env.removeValue(forKey: key) }
+        env["CLAUDE_CODE_DISABLE_AUTOUPDATER"] = "1"
+        env["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1"
         for (key, value) in extra { env[key] = value }
         return env
     }
@@ -36,61 +38,51 @@ public struct ProcessCommandRunner: CommandRunning {
                     arguments: [String],
                     workingDirectory: String?,
                     timeout: TimeInterval) async -> (output: String, status: Int32)? {
-        await withCheckedContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            process.environment = ClaudeChildEnvironment.sanitized()
-            if let workingDirectory {
-                process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
-            }
-
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            // No stdin: the probe must never sit waiting for input.
-            process.standardInput = FileHandle.nullDevice
-
-            // Guarantees exactly one resume across the success and timeout paths.
-            let resumed = OneShot()
-
-            do {
-                try process.run()
-            } catch {
-                log.warning("claude command failed to launch")
-                if resumed.claim() { continuation.resume(returning: nil) }
-                return
-            }
-
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                guard process.isRunning else { return }
-                log.warning("claude command timed out; terminating")
-                process.terminate()
-                // The reader below still completes; the timeout only forces exit.
-            }
-
-            DispatchQueue.global().async {
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                let output = String(decoding: data, as: UTF8.self)
-                if resumed.claim() {
-                    continuation.resume(returning: (output, process.terminationStatus))
+        let cancellation = ClaudeCancellation()
+        return await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global().async {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: executable)
+                    process.arguments = arguments
+                    process.environment = ClaudeChildEnvironment.sanitized()
+                    process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory ?? NSTemporaryDirectory())
+                    let pipe = Pipe()
+                    process.standardOutput = pipe
+                    process.standardError = FileHandle.nullDevice
+                    process.standardInput = FileHandle.nullDevice
+                    do { try process.run() } catch { continuation.resume(returning: nil); return }
+                    try? pipe.fileHandleForWriting.close()
+                    var result: (output: String, status: Int32)?
+                    defer {
+                        ClaudeProcessCleanup.stop(process)
+                        try? pipe.fileHandleForReading.close()
+                        continuation.resume(returning: result)
+                    }
+                    var output = Data()
+                    let deadline = ProcessInfo.processInfo.systemUptime + timeout
+                    while !cancellation.cancelled && ProcessInfo.processInfo.systemUptime < deadline {
+                        var fd = pollfd(fd: pipe.fileHandleForReading.fileDescriptor, events: Int16(POLLIN), revents: 0)
+                        if poll(&fd, 1, 100) > 0 {
+                            var bytes = [UInt8](repeating: 0, count: 8192)
+                            let count = Darwin.read(fd.fd, &bytes, bytes.count)
+                            if count <= 0 {
+                                if !process.isRunning {
+                                    process.waitUntilExit()
+                                    result = (String(decoding: output, as: UTF8.self), process.terminationStatus)
+                                    return
+                                }
+                                Thread.sleep(forTimeInterval: 0.02)
+                            }
+                            if count > 0 { output.append(contentsOf: bytes.prefix(count)) }
+                            if output.count > 65536 { break }
+                        }
+                    }
                 }
             }
-        }
+        }, onCancel: { cancellation.cancel() })
     }
-}
 
-/// Single-use latch, so a continuation cannot be resumed twice.
-final class OneShot: @unchecked Sendable {
-    private let lock = NSLock()
-    private var used = false
-    func claim() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        if used { return false }
-        used = true
-        return true
-    }
 }
 
 // MARK: - PTY session
@@ -122,12 +114,12 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
 
     /// Tools are disabled explicitly. The probe only needs the command UI.
     ///
-    /// `--settings` pre-supplies the theme so Claude Code's first-run picker does
-    /// not appear: driving that wizard through a PTY proved unreliable, and not
-    /// raising it at all is both simpler and safer than answering setup screens.
+    /// Settings do not bypass global onboarding. If setup is incomplete the
+    /// probe aborts; the user completes setup in their own terminal.
     public static let noToolArguments = [
-        "--allowed-tools", "",
-        "--settings", #"{"theme":"dark"}"#,
+        "--tools", "", "--strict-mcp-config", "--mcp-config", #"{"mcpServers":{}}"#,
+        "--setting-sources", "", "--no-chrome",
+        "--settings", #"{"theme":"dark","disableAllHooks":true}"#,
     ]
 
     private let readyTimeout: TimeInterval
@@ -142,40 +134,56 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
     public func runSlashCommand(_ command: String,
                                 executable: String,
                                 workingDirectory: String) async -> ClaudeCLISessionResult {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                continuation.resume(returning: self.drive(command,
-                                                          executable: executable,
-                                                          workingDirectory: workingDirectory))
+        guard command == "/usage" else { return .launchFailed }
+        let cancellation = ClaudeCancellation()
+        return await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global().async {
+                    continuation.resume(returning: self.drive(command, executable: executable,
+                        workingDirectory: workingDirectory, cancellation: cancellation))
+                }
             }
-        }
+        }, onCancel: { cancellation.cancel() })
     }
 
     private func drive(_ command: String,
                        executable: String,
-                       workingDirectory: String) -> ClaudeCLISessionResult {
-        var primary: Int32 = 0
+                       workingDirectory: String, cancellation: ClaudeCancellation) -> ClaudeCLISessionResult {
+        var primary: Int32 = 0, secondary: Int32 = 0
         var window = winsize(ws_row: 50, ws_col: 120, ws_xpixel: 0, ws_ypixel: 0)
-
-        let pid = forkpty(&primary, nil, nil, &window)
-        if pid < 0 { return .launchFailed }
-
-        if pid == 0 {
-            // Child. Only async-signal-safe work here.
-            _ = workingDirectory.withCString { chdir($0) }
-            let environment = ClaudeChildEnvironment.sanitized(extra: [
-                "TERM": "xterm-256color", "COLUMNS": "120", "LINES": "50",
-                // Keep the probe out of any inherited project context.
-                "CLAUDE_CODE_DISABLE_AUTOUPDATER": "1",
-            ])
-            let arguments = [executable] + Self.noToolArguments
-            let argv: [UnsafeMutablePointer<CChar>?] =
-                arguments.map { strdup($0) } + [nil]
-            let envp: [UnsafeMutablePointer<CChar>?] =
-                environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
-            execve(executable, argv, envp)
-            _exit(127)   // execve only returns on failure
+        guard openpty(&primary, &secondary, nil, nil, &window) == 0 else { return .launchFailed }
+        let environment = ClaudeChildEnvironment.sanitized(extra: [
+            "TERM": "xterm-256color", "COLUMNS": "120", "LINES": "50",
+        ])
+        let argv = ([executable] + Self.noToolArguments).map { strdup($0) } + [nil]
+        let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer { argv.forEach { free($0) }; envp.forEach { free($0) } }
+        var actions: posix_spawn_file_actions_t?
+        var attributes: posix_spawnattr_t?
+        posix_spawn_file_actions_init(&actions)
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawn_file_actions_destroy(&actions); posix_spawnattr_destroy(&attributes) }
+        for fd in [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO] {
+            posix_spawn_file_actions_adddup2(&actions, secondary, fd)
         }
+        posix_spawn_file_actions_addclose(&actions, primary)
+        posix_spawn_file_actions_addclose(&actions, secondary)
+        if #available(macOS 26, *) {
+            posix_spawn_file_actions_addchdir(&actions, workingDirectory)
+        } else {
+            posix_spawn_file_actions_addchdir_np(&actions, workingDirectory)
+        }
+        var defaults = sigset_t(), mask = sigset_t()
+        sigemptyset(&defaults); sigemptyset(&mask)
+        for signal in [SIGTERM, SIGINT, SIGHUP, SIGPIPE, SIGTTIN, SIGTTOU] { sigaddset(&defaults, signal) }
+        posix_spawnattr_setsigdefault(&attributes, &defaults)
+        posix_spawnattr_setsigmask(&attributes, &mask)
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_SETSIGDEF |
+                                                   POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT))
+        var pid: pid_t = 0
+        let status = posix_spawn(&pid, executable, &actions, &attributes, argv, envp)
+        close(secondary)
+        guard status == 0 else { close(primary); return .launchFailed }
 
         defer { terminate(pid: pid, fd: primary) }
 
@@ -185,9 +193,10 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
         var handledSetup = Set<SetupScreen>()
         let deadline = Date().addingTimeInterval(readyTimeout)
 
-        while Date() < deadline {
+        while !cancellation.cancelled && (didSend ? Date().timeIntervalSince(sentAt) < commandTimeout : Date() < deadline) {
             guard let chunk = read(fd: primary, timeout: 0.5) else { break }
             buffer.append(chunk)
+            if buffer.count > 2 * 1024 * 1024 { return .timedOut }
 
             let text = String(decoding: buffer, as: UTF8.self)
 
@@ -195,10 +204,14 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
             // Only screens we positively recognise are answered, each at most
             // once; anything else is left alone and the probe simply times out
             // rather than pressing Enter through an unknown consent screen.
-            if !didSend, let screen = Self.setupScreen(in: text), !handledSetup.contains(screen) {
+            let latest = ClaudeUsageCLIParser.collapsed(String(text.suffix(6000)))
+            if !didSend && (latest.contains("selectloginmethod") || latest.contains("choosethetextstyle")) {
+                return .timedOut
+            }
+            if !didSend, let screen = Self.setupScreen(in: text, directory: workingDirectory), !handledSetup.contains(screen) {
                 handledSetup.insert(screen)
                 log.debug("answering claude setup screen", ["screen": screen.rawValue])
-                Thread.sleep(forTimeInterval: 0.6)
+                Thread.sleep(forTimeInterval: 1.0)
                 _ = screen.response.withCString { write(primary, $0, strlen($0)) }
                 // Let the next screen paint before deciding anything else.
                 Thread.sleep(forTimeInterval: 1.2)
@@ -208,7 +221,9 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
             if !didSend, Self.looksReady(text) {
                 // A moment for the first paint to settle before typing.
                 Thread.sleep(forTimeInterval: 1.0)
-                _ = command.appending("\r").withCString { write(primary, $0, strlen($0)) }
+                _ = command.withCString { write(primary, $0, strlen($0)) }
+                Thread.sleep(forTimeInterval: 0.3)
+                _ = "\r".withCString { write(primary, $0, 1) }
                 didSend = true
                 sentAt = Date()
                 log.debug("sent slash command to claude session")
@@ -219,18 +234,8 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
         }
 
         let text = String(decoding: buffer, as: UTF8.self)
-        Self.dumpTranscriptIfRequested(text)
         if !didSend { return text.isEmpty ? .launchFailed : .timedOut }
         return .output(text)
-    }
-
-    /// Development affordance: `TBU_PROBE_TRANSCRIPT=<path>` writes the raw PTY
-    /// transcript so the readiness heuristics can be tuned against what Claude
-    /// Code actually renders. Off unless the variable is set.
-    static func dumpTranscriptIfRequested(_ text: String) {
-        guard let path = ProcessInfo.processInfo.environment["TBU_PROBE_TRANSCRIPT"],
-              !path.isEmpty else { return }
-        try? text.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
     /// First-run setup screens the probe knows how to get past.
@@ -239,35 +244,27 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
     /// once, and nothing else is ever answered — an unrecognised prompt must not
     /// be dismissed blindly, because it might be asking for consent.
     enum SetupScreen: String, Hashable {
-        case theme
-        case pressEnter
         case trustProbeDirectory
 
         /// Keystrokes that accept the safe default.
         var response: String {
             switch self {
-            case .theme, .pressEnter, .trustProbeDirectory: return "\r"
+            case .trustProbeDirectory: return "\r"
             }
         }
     }
 
-    static func setupScreen(in text: String) -> SetupScreen? {
+    static func setupScreen(in text: String, directory: String) -> SetupScreen? {
         // Matched on whitespace-collapsed text: the TUI lays words out with
         // cursor moves, so "choose the text style" arrives as one run of
         // characters once escapes are stripped.
         let tail = ClaudeUsageCLIParser.collapsed(String(text.suffix(6000)))
         func has(_ needle: String) -> Bool { tail.contains(ClaudeUsageCLIParser.collapsed(needle)) }
 
-        if has("choose the text style") || has("run /theme") {
-            return .theme
-        }
         // Trust is a consent screen, so it is answered only when the path shown is
         // our own empty probe directory.
-        if has("do you trust the files"), has("claudeprobe") {
+        if has("do you trust the files"), has(directory) {
             return .trustProbeDirectory
-        }
-        if has("press enter to continue") {
-            return .pressEnter
         }
         return nil
     }
@@ -306,6 +303,7 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
 
     /// Always runs: terminate, then reap, so nothing is orphaned.
     private func terminate(pid: pid_t, fd: Int32) {
+        kill(-pid, SIGTERM)
         kill(pid, SIGTERM)
         var status: Int32 = 0
         // Give it a moment to exit cleanly, then insist.
@@ -313,6 +311,7 @@ public struct ClaudePTYSession: ClaudeCLISessionRunning {
             if waitpid(pid, &status, WNOHANG) != 0 { close(fd); return }
             Thread.sleep(forTimeInterval: 0.05)
         }
+        kill(-pid, SIGKILL)
         kill(pid, SIGKILL)
         _ = waitpid(pid, &status, 0)
         close(fd)

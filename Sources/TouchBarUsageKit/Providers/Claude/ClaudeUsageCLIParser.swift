@@ -60,14 +60,13 @@ public enum ClaudeUsageCLIParser {
         }
 
         var windows: [UsageWindow] = []
-        var seen = Set<String>()
         var current: SectionRule?
 
         for (index, line) in lines.enumerated() {
             if let rule = section(for: line) {
                 current = rule
             }
-            guard let rule = current, !seen.contains(rule.id) else { continue }
+            guard let rule = current else { continue }
             guard let percent = usedPercent(in: line) else { continue }
 
             // Reset text usually sits on the label line, the percentage line, or
@@ -77,6 +76,7 @@ public enum ClaudeUsageCLIParser {
                 index + 1 < lines.count ? lines[index + 1] : "",
                 index > 0 ? lines[index - 1] : "",
             ]
+            windows.removeAll { $0.id == rule.id }
             windows.append(UsageWindow(
                 id: rule.id,
                 label: rule.label,
@@ -86,7 +86,6 @@ public enum ClaudeUsageCLIParser {
                 duration: rule.category == .short ? 5 * 3600 : 7 * 86_400,
                 category: rule.category,
                 resetDescription: resetText(in: context)))
-            seen.insert(rule.id)
             current = nil
         }
 

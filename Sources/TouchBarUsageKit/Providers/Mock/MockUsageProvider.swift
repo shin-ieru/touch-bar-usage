@@ -50,36 +50,6 @@ public actor MockUsageProvider: UsageProvider {
     }
 }
 
-/// Deterministic HTTP double for provider tests — no network, no credentials.
-public struct StubHTTPClient: UsageHTTPClient {
-    private let outcome: @Sendable (String) -> UsageFetchOutcome
-    public init(_ outcome: @escaping @Sendable (String) -> UsageFetchOutcome) {
-        self.outcome = outcome
-    }
-    public init(always outcome: UsageFetchOutcome) {
-        self.outcome = { _ in outcome }
-    }
-    public func fetchUsage(accessToken: String) async -> UsageFetchOutcome {
-        outcome(accessToken)
-    }
-}
-
-/// Credential double. Holds an obviously fake token so a leak in tests is inert.
-public struct StubCredentialReader: ClaudeCredentialReading {
-    public static let fakeToken = "test-token-not-a-real-credential"
-    private let result: Result<ClaudeCredential, CredentialError>
-
-    public init(token: String = StubCredentialReader.fakeToken, expiresAt: Date? = nil) {
-        self.result = .success(ClaudeCredential(accessToken: token, expiresAt: expiresAt))
-    }
-    public init(error: CredentialError) {
-        self.result = .failure(error)
-    }
-    public func readCredential() throws -> ClaudeCredential {
-        try result.get()
-    }
-}
-
 public struct StubInstallationProbe: ClaudeInstallationProbing {
     private let installed: Bool
     public init(installed: Bool) { self.installed = installed }

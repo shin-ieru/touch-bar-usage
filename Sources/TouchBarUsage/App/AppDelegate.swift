@@ -190,6 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entries.append(.init(label: "\(entry.provider.displayName) mascot",
                                  value: await MainActor.run { MascotProvider.activeSource(for: id) }))
             entries.append(contentsOf: await entry.provider.diagnostics())
+            if case .stale = states[id] {
+                entries.append(.init(label: "\(entry.provider.displayName) displayed usage source", value: "stale cache"))
+            }
             if let last = await entry.coordinator.lastSuccessfulFetch {
                 entries.append(.init(label: "\(entry.provider.displayName) last refresh",
                                      value: ResetFormatter.age(since: last)))
@@ -289,7 +292,7 @@ enum DebugState {
 enum AppInfo {
     static var version: String {
         let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+        let short = info?["CFBundleShortVersionString"] as? String ?? "0.1.2"
         let build = info?["CFBundleVersion"] as? String ?? "dev"
         return "\(short) (\(build))"
     }
