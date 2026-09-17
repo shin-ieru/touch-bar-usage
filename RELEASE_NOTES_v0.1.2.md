@@ -12,7 +12,8 @@
 - Added bounded process lifetime, cancellation, and protocol/fallback tests.
 
 Codex and Touch Bar presentation are unchanged. Distributed builds continue to
-use repository-safe artwork. This release is prepared locally, not published.
+use repository-safe artwork; Clawd is available when you build from source with
+`make assets`.
 
 ## Compatibility
 
